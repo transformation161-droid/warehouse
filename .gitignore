@@ -31,3 +31,8 @@ photos/
 *.png
 *.webp
 *.heic
+
+# Private runtime and local acceptance artifacts
+*.cms
+*.partial
+pilot-acceptance.json

@@ -1,0 +1,41 @@
+{
+  "scenario": "synthetic; two simultaneous sessions, 1000 inventory rows, 12 MP JPEG, grouped XLSX/PDF",
+  "configured_cpu": 0.5,
+  "configured_memory_bytes": 1073741824,
+  "memory_peak_bytes": 261746688,
+  "cgroup_memory_max": "1073741824",
+  "cgroup_cpu_max": "50000 100000",
+  "oom_killed": false,
+  "runtime_uid": 10001,
+  "latency_seconds": {
+    "state": {
+      "count": 4,
+      "max": 0.707,
+      "mean": 0.291
+    },
+    "xlsx": {
+      "count": 4,
+      "max": 0.867,
+      "mean": 0.47
+    },
+    "pdf": {
+      "count": 4,
+      "max": 4.308,
+      "mean": 3.082
+    },
+    "photo": {
+      "count": 2,
+      "max": 1.398,
+      "mean": 0.898
+    }
+  },
+  "restart_verified": true,
+  "container_recreation_verified": true,
+  "new_image_rebuild_verified": true,
+  "photo_and_audit_persisted": true,
+  "independent_copy_verified": true,
+  "restored_copy_verified": true,
+  "second_replica_rejected": true,
+  "tls_verification": "trusted test CA; hostname verification on; no insecure flags",
+  "image_id": "sha256:2bffc77283575fe26a024a7b6b5853aad31b966183a03efa301217a4b360ba62"
+}

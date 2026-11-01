@@ -103,6 +103,17 @@ class Database:
         con = sqlite3.connect(self.path, timeout=15)
         con.row_factory = sqlite3.Row
         con.execute('pragma foreign_keys=on')
+        maximum=int(os.getenv('KSU_DB_MAX_BYTES','0'))
+        if maximum:
+            page_size=con.execute('pragma page_size').fetchone()[0]
+            allowed=maximum//page_size
+            if allowed<1:
+                con.close()
+                raise ValueError('SQLite size limit is too small')
+            actual=con.execute(f'pragma max_page_count={allowed}').fetchone()[0]
+            if actual>allowed:
+                con.close()
+                raise ValueError('Existing database exceeds the configured size limit')
         con.create_function('actor_id', 0, lambda: actor['id'] if actor else '')
         con.create_function('actor_role', 0, lambda: actor['role'] if actor else '')
         try:
@@ -139,7 +150,9 @@ class Database:
 
 def seed_demo(db, manager_password, inspector_password):
     """Explicit CLI only; never seed on server startup or overwrite an existing user."""
-    with db.connect() as con:
+    actor = {'id':'manager', 'role':'manager'}
+    seed = json.loads((ROOT/'server/seed.json').read_text())
+    with db.connect(actor) as con:
         if con.execute('select count(*) from users').fetchone()[0]:
             raise ValueError('База уже содержит пользователей; инициализация отменена')
         for ident, name, role, password in [('manager','ДЕМО · Андрей','manager',manager_password),
@@ -148,9 +161,6 @@ def seed_demo(db, manager_password, inspector_password):
                 raise ValueError('Пароли должны содержать не менее 12 символов')
             con.execute('insert into users(id,username,name,role,password) values(?,?,?,?,?)',
                         (ident,ident,name,role,password_hash(password)))
-    actor = {'id':'manager', 'role':'manager'}
-    seed = json.loads((ROOT/'server/seed.json').read_text())
-    with db.connect(actor) as con:
         for collection in ('sites','questions'):
             for item in seed[collection]:
                 data = dict(item); ident = data.pop('id'); stamp = now()

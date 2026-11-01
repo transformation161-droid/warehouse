@@ -4,6 +4,8 @@
 
 Начните с [README_START.txt](README_START.txt). Результаты аудита и границы текущей версии: [docs/AUDIT.md](docs/AUDIT.md). Для администратора: [docs/DEPLOY.md](docs/DEPLOY.md).
 
+Интернет-пилот задачи №4 подготовлен для **Amvera**, лимит до 500 ₽/30 дней: [конфигурация и статус](docs/AMVERA.md). Платный запуск требует отдельного подтверждения; публичный URL ещё не создан. Oracle не используется.
+
 ## Запуск на компьютере
 
 Нужен Python 3.12+ и доступ к установке Python-пакетов. Откройте терминал в папке проекта.
@@ -60,7 +62,8 @@ PDF требует шрифт DejaVu Sans на Linux: `/usr/share/fonts/truetype
 
 ```sh
 .venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python deploy/get_caddy.py --output /tmp/ksu-caddy
+CADDY_BIN=/tmp/ksu-caddy .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python smoke_test.py
 .venv/bin/python v11_flow_test.py
 node --check app.js
