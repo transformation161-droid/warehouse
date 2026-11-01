@@ -1,12 +1,15 @@
 [Unit]
 Description=KSU verified local backup
 
+RequiresMountsFor=/srv/ksu-data
+AssertPathIsMountPoint=/srv/ksu-data
+
 [Service]
 Type=oneshot
 User=ksu
 Group=ksu
 WorkingDirectory=/srv/ksu
 EnvironmentFile=/etc/ksu/ksu.env
-ExecStart=/bin/sh -c 'exec /srv/ksu/.venv/bin/python -m server backup "/srv/ksu-data/backups/ksu-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).sqlite3" --db "$KSU_DB"'
+ExecStart=/srv/ksu/.venv/bin/python deploy/rotate_backups.py --db ${KSU_DB} --directory /srv/ksu-data/backups --keep 7
 UMask=0077
 NoNewPrivileges=true

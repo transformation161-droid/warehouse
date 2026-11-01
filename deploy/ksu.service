@@ -1,6 +1,8 @@
 [Unit]
 Description=INSTRUCT KSU Control (demonstration pilot)
 After=network.target
+RequiresMountsFor=/srv/ksu-data
+AssertPathIsMountPoint=/srv/ksu-data
 
 [Service]
 Type=simple
@@ -11,6 +13,11 @@ EnvironmentFile=/etc/ksu/ksu.env
 ExecStart=/srv/ksu/.venv/bin/python -m server run
 Restart=on-failure
 UMask=0077
+MemoryMax=1G
+TasksMax=128
+LimitNOFILE=4096
+TimeoutStopSec=45
+Environment=PYTHONDONTWRITEBYTECODE=1
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

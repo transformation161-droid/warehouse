@@ -31,3 +31,12 @@ photos/
 *.png
 *.webp
 *.heic
+
+# Cloud state and local operator inputs (may contain infrastructure credentials)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+*.partial
+pilot-acceptance.json

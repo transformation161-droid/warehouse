@@ -12,6 +12,7 @@ init=sub.add_parser('init-demo');init.add_argument('--db',default=str(ROOT/'var/
 init.add_argument('--generate',action='store_true',help='Сгенерировать тестовые пароли в закрытом файле рядом с БД')
 run=sub.add_parser('run');run.add_argument('--port',type=int,default=8000)
 backup=sub.add_parser('backup');backup.add_argument('destination');backup.add_argument('--db',default=str(ROOT/'var/ksu.sqlite3'))
+restore=sub.add_parser('restore');restore.add_argument('source');restore.add_argument('destination',help='Новый путь БД, существующий файл не заменяется')
 args=parser.parse_args()
 if args.command=='init-demo':
     if args.generate:
@@ -29,16 +30,12 @@ if args.command=='init-demo':
 elif args.command=='run':
     import uvicorn
     from .app import create_app
-    uvicorn.run(create_app(),host='127.0.0.1',port=args.port,proxy_headers=False)
+    trust_local_proxy=os.getenv('KSU_TRUST_LOCAL_PROXY','0')=='1'
+    uvicorn.run(create_app(),host='127.0.0.1',port=args.port,proxy_headers=trust_local_proxy,forwarded_allow_ips='127.0.0.1')
 else:
-    target=Path(args.destination)
-    if target.exists():parser.error('Файл назначения уже существует')
-    target.parent.mkdir(parents=True,exist_ok=True)
-    # Reserve destination without ever replacing an existing backup.
-    descriptor=os.open(target,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(descriptor)
-    with sqlite3.connect(args.db) as source,sqlite3.connect(target) as dest:
-        source.backup(dest)
-        if dest.execute('pragma integrity_check').fetchone()[0]!='ok':raise RuntimeError('Проверка резервной копии не прошла')
-        # Do not restore old active browser sessions on rollback.
-        dest.execute('delete from sessions')
-    print('Резервная копия проверена:',target)
+    from .maintenance import snapshot_database
+    try:
+        snapshot_database(args.source if args.command=='restore' else args.db,args.destination)
+    except (OSError,ValueError,sqlite3.Error) as error:
+        parser.error(str(error))
+    print('Проверенная копия готова:',args.destination)
