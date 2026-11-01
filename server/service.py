@@ -1,0 +1,166 @@
+import json
+import sqlite3
+from datetime import date
+from fastapi import HTTPException
+from pydantic import ValidationError
+from .database import digest, now
+from .models import MODELS
+
+
+def fail(message, code=422):
+    raise HTTPException(code, message)
+
+
+def get_record(con, collection, ident):
+    return con.execute('select * from records where collection=? and id=?', (collection, ident)).fetchone()
+
+
+def accessible(con, actor, site):
+    return actor['role']=='manager' or bool(con.execute('select 1 from user_sites where user_id=? and site_id=?',
+                                                     (actor['id'],site)).fetchone())
+
+
+def apply_changes(db, actor, batch):
+    body_hash = digest(batch.model_dump_json())
+    try:
+        with db.connect(actor) as con:
+            con.execute('begin immediate')
+            previous = con.execute('select body_hash from mutations where user_id=? and id=?', (actor['id'],batch.mutationId)).fetchone()
+            if previous:
+                if previous[0] != body_hash:
+                    fail('Идентификатор запроса уже использован с другим содержимым',409)
+                return db.snapshot(con, actor)
+            seen = set()
+            for change in batch.changes:
+                key = (change.collection, change.id)
+                if key in seen:
+                    fail('Запись повторяется в одном запросе')
+                seen.add(key)
+                save_record(con, actor, change.collection, change.id, change.data, change.expectedVersion)
+            # All submitted inspection failures must have exactly one linked finding.
+            for change in batch.changes:
+                if change.collection != 'inspections':
+                    continue
+                ins = json.loads(get_record(con,'inspections',change.id)['data'])
+                linked = [json.loads(r[0]) for r in con.execute("select data from records where collection='findings' and json_extract(data,'$.inspectionId')=?", (change.id,))]
+                if sorted(x['questionId'] for x in linked) != sorted(x['questionId'] for x in ins['results'] if x['status']=='fail'):
+                    fail('Для каждого нарушения чек-листа нужна ровно одна карточка')
+            con.execute('insert into mutations values(?,?,?)',(actor['id'],batch.mutationId,body_hash))
+            return db.snapshot(con, actor)
+    except sqlite3.IntegrityError as exc:
+        fail('Операция запрещена правилами базы данных' if 'forbidden' in str(exc) else 'Нарушена целостность данных',403)
+
+
+def save_record(con, actor, collection, ident, payload, expected_version):
+    old = get_record(con,collection,ident)
+    if old and not accessible(con,actor,old['site_id']) and collection not in ('sites','questions'):
+        fail('Нет доступа к записи',403)
+    if (old['version'] if old else 0) != expected_version:
+        fail('Запись изменена другим пользователем. Обновите данные и сравните изменения.',409)
+    if old and collection=='inspections':
+        fail('Завершённый акт неизменяем',403)
+    raw = {k:v for k,v in payload.items() if k not in ('id','version','createdBy','createdAt','updatedAt')}
+    if raw.get('dueDate')=='':
+        raw['dueDate']=None
+    try:
+        data = MODELS[collection].model_validate(raw).model_dump(mode='json')
+    except ValidationError:
+        fail('Проверьте поля записи: формат, обязательные значения и допустимые числа')
+    before = json.loads(old['data']) if old else None
+    site = data.get('siteId')
+    if collection=='inventoryLines':
+        parent = get_record(con,'inventories',data['inventoryId'])
+        if not parent:
+            fail('Инвентаризация не найдена')
+        site = parent['site_id']
+        if old and before['inventoryId']!=data['inventoryId']:
+            fail('Перенос строки запрещён',403)
+        if actor['role']!='manager' and parent['author_id']!=actor['id']:
+            fail('Можно изменять только собственную инвентаризацию',403)
+        if json.loads(parent['data'])['stage']!='primary':
+            fail('После проверки расхождений строки пересчёта неизменяемы',409)
+    if site:
+        if not get_record(con,'sites',site):
+            fail('Объект не найден')
+        if not accessible(con,actor,site):
+            fail('Объект не назначен пользователю',403)
+    if collection in ('sites','questions') and actor['role']!='manager':
+        fail('Справочники доступны только руководителю',403)
+    if collection=='sites':
+        for row in con.execute("select id,data from records where collection='sites' and id!=?", (ident,)):
+            if json.loads(row['data'])['name'].casefold()==data['name'].casefold():
+                fail('Название объекта уже существует',409)
+    if collection=='inspections':
+        questions={r['id']:json.loads(r['data']) for r in con.execute("select * from records where collection='questions'")}
+        if len(data['results'])!=len(questions) or {r['questionId'] for r in data['results']}!=set(questions):
+            fail('Нужно заполнить каждый пункт актуального чек-листа ровно один раз')
+        for result in data['results']:
+            question=questions[result['questionId']]
+            result.update(title=question['title'],section=question['section'])
+            if result['status']=='fail' and not result['comment']:
+                fail('Опишите выявленное нарушение')
+            validate_photo(con, actor, site, result['photo'])
+        data['inspector']=actor['name']
+    if collection=='findings':
+        if data['questionId'] and not get_record(con,'questions',data['questionId']):
+            fail('Контрольный пункт не найден')
+        if before and any(data[k]!=before[k] for k in ('inspectionId','questionId')):
+            fail('Связь с исходным актом неизменяема',403)
+        if data['inspectionId']:
+            parent=get_record(con,'inspections',data['inspectionId'])
+            if not parent or parent['site_id']!=site or (not old and parent['author_id']!=actor['id']):
+                fail('Нет доступа к исходному акту',403)
+            answer=next((r for r in json.loads(parent['data'])['results'] if r['questionId']==data['questionId'] and r['status']=='fail'),None)
+            if not answer:
+                fail('Нарушение отсутствует в чек-листе')
+        if data['status']=='closed' and (not data['resolution'] or not data['evidence']):
+            fail('Для закрытия нужны описание результата и фото-подтверждение')
+        data['closedAt']=(before.get('closedAt') if before and before['status']=='closed' else now()) if data['status']=='closed' else None
+        data['repeat']=bool(before.get('repeat')) if before else False
+        if not before and data['questionId']:
+            data['repeat']=any(json.loads(r['data']).get('questionId')==data['questionId'] and
+                               0 <= (date.today()-date.fromisoformat(r['created_at'][:10])).days <= 90
+                               for r in con.execute("select * from records where collection='findings' and site_id=? and id!=?",(site,ident)))
+        for field in ('photo','evidence'):
+            validate_photo(con, actor, site, data[field])
+    if collection=='inventories':
+        start=before['stage'] if before else 'primary'
+        transitions={'primary':{'confirmed','corrected'}, 'confirmed':{'investigation','corrected'},
+                     'investigation':{'approved','corrected'}, 'approved':{'recovered'}, 'corrected':set(), 'recovered':set()}
+        if data['stage']!=start:
+            if not old or actor['role']!='manager':
+                fail('Стадию расхождений подтверждает руководитель',403)
+            if data['stage'] not in transitions[start] or not data['decision']:
+                fail('Укажите основание и выберите следующую стадию')
+        if before and start!='primary' and any(data[k]!=before[k] for k in ('siteId','date','title')):
+            fail('Реквизиты проверенной инвентаризации неизменяемы',409)
+    if collection=='visits':
+        assignee=con.execute('select * from users where id=? and active=1', (data['assignedTo'],)).fetchone()
+        if not assignee or not accessible(con,dict(assignee),site):
+            fail('Исполнителю не назначен объект')
+        data['assignee']=assignee['name']
+        if actor['role']!='manager' and (not old or before['assignedTo']!=actor['id']):
+            fail('Планом управляет руководитель',403)
+        if data['status']=='completed':
+            ins=get_record(con,'inspections',data['inspectionId'])
+            if not ins or ins['site_id']!=site or ins['author_id']!=data['assignedTo']:
+                fail('Для выполнения нужен акт назначенного исполнителя на этом объекте')
+        elif data['inspectionId']:
+            fail('Акт можно связать только с выполненным выездом')
+    stamp=now(); serialized=json.dumps(data,ensure_ascii=False,sort_keys=True)
+    if old:
+        con.execute('update records set data=?,site_id=?,version=version+1,updated_at=? where collection=? and id=?',
+                    (serialized,site,stamp,collection,ident))
+    else:
+        con.execute('insert into records values(?,?,?,?,?,?,?,?)',
+                    (collection,ident,serialized,actor['id'],site,1,stamp,stamp))
+
+
+def validate_photo(con, actor, site, url):
+    if not url:
+        return
+    if not url.startswith('/api/media/') or '/' in url[len('/api/media/'):]:
+        fail('Фото должно быть загружено в закрытое хранилище')
+    media=con.execute('select site_id from media where id=?', (url.split('/')[-1],)).fetchone()
+    if not media or media[0]!=site or not accessible(con,actor,site):
+        fail('Нет доступа к фотографии',403)

@@ -1,0 +1,21 @@
+[Unit]
+Description=INSTRUCT KSU Control (demonstration pilot)
+After=network.target
+
+[Service]
+Type=simple
+User=ksu
+Group=ksu
+WorkingDirectory=/srv/ksu
+EnvironmentFile=/etc/ksu/ksu.env
+ExecStart=/srv/ksu/.venv/bin/python -m server run
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/ksu-data
+
+[Install]
+WantedBy=multi-user.target

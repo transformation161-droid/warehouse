@@ -1,0 +1,12 @@
+[Unit]
+Description=KSU verified local backup
+
+[Service]
+Type=oneshot
+User=ksu
+Group=ksu
+WorkingDirectory=/srv/ksu
+EnvironmentFile=/etc/ksu/ksu.env
+ExecStart=/bin/sh -c 'exec /srv/ksu/.venv/bin/python -m server backup "/srv/ksu-data/backups/ksu-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).sqlite3" --db "$KSU_DB"'
+UMask=0077
+NoNewPrivileges=true
