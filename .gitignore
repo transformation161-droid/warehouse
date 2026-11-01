@@ -10,3 +10,24 @@ dist/
 *.log
 playwright-report/
 test-results/
+
+var/
+.venv/
+backups/
+*.sqlite3*
+
+# Private runtime data and credentials
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.pem
+*.key
+demo-accounts.txt
+uploads/
+photos/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
