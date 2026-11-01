@@ -1,0 +1,26 @@
+name: KSU free pilot infrastructure checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+      - name: Syntax and provider schema (no cloud credentials)
+        working-directory: deploy/oracle
+        run: |
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform fmt -check -recursive
+          terraform validate -no-color
+          terraform test -no-color
+      - name: Installer shell syntax
+        run: bash -n deploy/install_vm.sh

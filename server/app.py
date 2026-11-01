@@ -28,7 +28,12 @@ def create_app(path=None, origin=None, secure=None):
         raise ValueError('HTTPS требует KSU_SECURE_COOKIES=1')
     if not public_origin.startswith('https://') and urlparse(public_origin).hostname not in ('localhost','127.0.0.1','testserver'):
         raise ValueError('Внешний адрес требует HTTPS')
-    db=Database(path or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3')))
+    database_path=path or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3'))
+    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1':
+        # A missing data mount must never silently create a fresh, empty production database.
+        from .maintenance import validate_database
+        validate_database(database_path)
+    db=Database(database_path)
     app=FastAPI(title='КСУ Контроль',docs_url=None,redoc_url=None,openapi_url=None)
     app.state.db=db
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[urlparse(public_origin).hostname])

@@ -2,7 +2,9 @@
 
 Сохранён русскоязычный интерфейс v1.1: объекты, проверки, план выездов, нарушения, инвентаризации, аналитика и недельная сводка. Два независимых аккаунта работают через локальный API с одной базой. **Все вводимые данные должны быть тестовыми. Внешние интеграции не подключены.**
 
-Начните с [README_START.txt](README_START.txt). Результаты аудита и границы текущей версии: [docs/AUDIT.md](docs/AUDIT.md). Для администратора: [docs/DEPLOY.md](docs/DEPLOY.md).
+Начните с [README_START.txt](README_START.txt). Результаты аудита и границы текущей версии: [docs/AUDIT.md](docs/AUDIT.md). Для администратора: [docs/DEPLOY.md](docs/DEPLOY.md). Выбор бесплатного сервера: [docs/FREE_HOSTING.md](docs/FREE_HOSTING.md).
+
+Для задачи №4 подготовлены Oracle Always Free Terraform, установщик VM и настоящий HTTPS-тест Caddy. Публичный сервер ещё не создан: нужен аккаунт OCI/технический доступ и применение сетевых разрешений среды. Локальный HTTPS-тест не является публичным URL.
 
 ## Запуск на компьютере
 
@@ -60,7 +62,8 @@ PDF требует шрифт DejaVu Sans на Linux: `/usr/share/fonts/truetype
 
 ```sh
 .venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m unittest discover -s tests -v
+python deploy/get_caddy.py --output /tmp/ksu-caddy
+CADDY_BIN=/tmp/ksu-caddy .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python smoke_test.py
 .venv/bin/python v11_flow_test.py
 node --check app.js
@@ -75,7 +78,7 @@ node --check sync.js
 - `sync.js` — сессии, API, синхронизация, восстановление запросов, импорт и серверные выгрузки;
 - `server/` — API, контракты, проверка прав, схема общей БД, аудит, фото, импорт и отчёты;
 - `tests/`, `smoke_test.py`, `v11_flow_test.py` — API и браузерные проверки;
-- `deploy/` — примеры службы, HTTPS-прокси и ежедневной копии;
+- `deploy/` — Oracle Terraform, установщик VM, Caddy, проверки публичного HTTPS, службы и проверяемые копии;
 - `schema.sql` — исторический проект Supabase, **не действующая миграция и не применять**;
 - `CODEX_HANDOFF.md`, `CODEX_START.md`, `START_HERE.txt` — исходные документы прототипа; текущий статус указан здесь и в аудите.
 
