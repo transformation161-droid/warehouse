@@ -5,10 +5,15 @@ import os
 import secrets
 import time
 import warnings
+import asyncio
+import sqlite3
+import tempfile
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.background import BackgroundTask
 from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .database import Database, ROOT, digest, password_hash, password_valid, now
@@ -16,6 +21,7 @@ from .imports import parse_import, commit_import
 from .models import Changes, Login, ImportFile, MediaFile
 from .reports import build_report, export
 from .service import accessible, apply_changes, fail
+from .storage import StorageFull, check_storage
 
 Image.MAX_IMAGE_PIXELS=20_000_000
 DUMMY_PASSWORD=password_hash(secrets.token_urlsafe(24))
@@ -28,10 +34,23 @@ def create_app(path=None, origin=None, secure=None):
         raise ValueError('HTTPS требует KSU_SECURE_COOKIES=1')
     if not public_origin.startswith('https://') and urlparse(public_origin).hostname not in ('localhost','127.0.0.1','testserver'):
         raise ValueError('Внешний адрес требует HTTPS')
-    db=Database(path or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3')))
+    database_path=path or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3'))
+    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1':
+        # A missing data mount must never silently create a fresh, empty production database.
+        from .maintenance import validate_database
+        validate_database(database_path)
+    db=Database(database_path)
     app=FastAPI(title='КСУ Контроль',docs_url=None,redoc_url=None,openapi_url=None)
     app.state.db=db
+    write_gate=asyncio.Lock()
+    backup_gate=threading.BoundedSemaphore(1)
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[urlparse(public_origin).hostname])
+
+    @app.exception_handler(sqlite3.OperationalError)
+    async def sqlite_failure(request, error):
+        if 'full' in str(error).lower():
+            return JSONResponse({'detail':'Лимит постоянного хранилища достигнут'},status_code=507)
+        return JSONResponse({'detail':'Операция с базой временно недоступна'},status_code=503)
 
     @app.middleware('http')
     async def security(request, call_next):
@@ -45,7 +64,16 @@ def create_app(path=None, origin=None, secure=None):
                 if len(body)>6_000_000:
                     return JSONResponse({'detail':'Запрос больше 6 МБ'},status_code=413)
             request._body=bytes(body)
-        response=await call_next(request)
+        if request.method in ('POST','PUT','PATCH','DELETE') and os.getenv('KSU_DATA_MAX_BYTES'):
+            async with write_gate:
+                try:
+                    if request.url.path not in ('/api/admin/backup','/api/logout'):
+                        check_storage(db.path)
+                except StorageFull as error:
+                    return JSONResponse({'detail':str(error)},status_code=507)
+                response=await call_next(request)
+        else:
+            response=await call_next(request)
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='same-origin'
@@ -116,6 +144,29 @@ def create_app(path=None, origin=None, secure=None):
 
     @app.post('/api/changes')
     def changes(body:Changes,request:Request):return apply_changes(db,auth(request,True),body)
+
+    @app.post('/api/admin/backup')
+    def export_backup(request:Request):
+        actor=auth(request,True)
+        if actor['role']!='manager':fail('Резервные копии доступны только руководителю',403)
+        if not backup_gate.acquire(blocking=False):fail('Другая копия ещё формируется',429)
+        temporary=None
+        try:
+            maximum=int(os.getenv('KSU_BACKUP_EXPORT_MAX_BYTES','16777216'))
+            if db.path.stat().st_size>maximum:fail('Копия превышает бесплатный лимит внешнего экспорта; требуется решение администратора',413)
+            from .maintenance import snapshot_database
+            temporary=tempfile.TemporaryDirectory(prefix='ksu-private-export-')
+            target=Path(temporary.name)/'backup.sqlite3'
+            snapshot_database(db.path,target)
+            if target.stat().st_size>maximum:fail('Копия превышает лимит экспорта',413)
+            def cleanup():
+                temporary.cleanup()
+                backup_gate.release()
+            return FileResponse(target,media_type='application/octet-stream',filename='ksu-backup.sqlite3',background=BackgroundTask(cleanup))
+        except Exception:
+            if temporary:temporary.cleanup()
+            backup_gate.release()
+            raise
 
     @app.get('/api/history')
     def history(request:Request, collection:str='', record_id:str='', before:int=2**63-1):

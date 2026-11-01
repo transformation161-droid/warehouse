@@ -1,0 +1,16 @@
+**
+!Dockerfile
+!requirements.txt
+!constraints.txt
+!server/
+!server/*.py
+!server/seed.json
+!deploy/
+!deploy/amvera/
+!deploy/amvera/runtime.py
+!deploy/amvera/healthcheck.py
+!deploy/rotate_backups.py
+!app.js
+!sync.js
+!index.html
+!styles.css

@@ -13,6 +13,8 @@ jobs:
   server-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      CADDY_BIN: /tmp/ksu-caddy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,11 +26,36 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
+      - name: Install verified TLS test proxy
+        run: python deploy/get_caddy.py --output /tmp/ksu-caddy
       - name: Compile Python
         run: python -m compileall -q server tests
       - name: Run server tests
         run: python -m unittest discover -s tests -v
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Browser collaboration tests
+        run: |
+          python smoke_test.py
+          python v11_flow_test.py
       - name: Check JavaScript syntax
         run: |
           node --check app.js
           node --check sync.js
+
+  amvera-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python deploy/get_caddy.py --output /tmp/ksu-caddy
+      - name: Build image with no secrets or local data
+        run: docker build -t ksu-amvera:ci .
+      - name: Test real resource limits and persistent volume
+        run: python -m deploy.amvera.container_check --image ksu-amvera:ci --caddy /tmp/ksu-caddy --output /tmp/ksu-amvera-metrics.json
+      - name: Print non-secret resource measurements
+        run: cat /tmp/ksu-amvera-metrics.json
