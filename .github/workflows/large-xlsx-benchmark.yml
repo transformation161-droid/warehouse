@@ -1,0 +1,63 @@
+name: Synthetic large XLSX resource acceptance
+on:
+  pull_request:
+    branches: [main, feat/issue-4-amvera-pilot]
+    paths:
+      - 'server/**'
+      - 'decisions.js'
+      - 'experiments/large_xlsx/**'
+      - 'Dockerfile'
+      - '.github/workflows/large-xlsx-benchmark.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  large-xlsx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Generate entirely fictional 18 MB and 30 MB books
+        run: |
+          mkdir -p "$RUNNER_TEMP/ksu-fixtures" "$RUNNER_TEMP/ksu-results"
+          python -m experiments.large_xlsx.generate "$RUNNER_TEMP/ksu-fixtures/demo-18.xlsx" --bytes 18000000 > "$RUNNER_TEMP/ksu-fixtures/demo-18-expected.json"
+          python -m experiments.large_xlsx.generate "$RUNNER_TEMP/ksu-fixtures/demo-30.xlsx" --bytes 30000000 --shared > "$RUNNER_TEMP/ksu-fixtures/demo-30-expected.json"
+      - name: Build application and local benchmark client
+        run: |
+          docker build -t ksu-amvera:issue10 .
+          docker build -f experiments/large_xlsx/Dockerfile -t ksu-amvera:issue10-bench experiments/large_xlsx
+      - name: Full HTTP import on one half CPU and 1 GiB RAM
+        run: |
+          for size in 18 30; do
+            docker run --rm --network none --cpus 0.5 --memory 1g --memory-swap 1g --pids-limit 128 \
+              --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m --user "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE/experiments:/bench/experiments:ro" \
+              -v "$RUNNER_TEMP/ksu-fixtures:/fixtures:ro" -v "$RUNNER_TEMP/ksu-results:/out:rw" \
+              -e PYTHONPATH=/bench --entrypoint python ksu-amvera:issue10-bench \
+              -m experiments.large_xlsx.full_flow "/fixtures/demo-$size.xlsx" "/out/full$size" \
+              > "$RUNNER_TEMP/ksu-results/metrics-$size.json"
+          done
+      - name: Publish only aggregate synthetic metrics
+        env:
+          METRICS_DIR: ${{ runner.temp }}/ksu-results
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          for size in (18,30):
+              data=json.loads((Path(os.environ['METRICS_DIR'])/f'metrics-{size}.json').read_text())
+              message=json.dumps(data,separators=(',',':')).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print('::notice title=Large XLSX '+str(size)+' MB::'+message)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-xlsx-aggregate-metrics
+          path: ${{ runner.temp }}/ksu-results/metrics-*.json
+          retention-days: 7
+          if-no-files-found: error
