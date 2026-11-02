@@ -151,7 +151,7 @@ class Database:
 def seed_demo(db, manager_password, inspector_password):
     """Explicit CLI only; never seed on server startup or overwrite an existing user."""
     actor = {'id':'manager', 'role':'manager'}
-    seed = json.loads((ROOT/'server/seed.json').read_text())
+    seed = json.loads((ROOT/'server/seed.json').read_text(encoding='utf-8'))
     with db.connect(actor) as con:
         if con.execute('select count(*) from users').fetchone()[0]:
             raise ValueError('База уже содержит пользователей; инициализация отменена')

@@ -1,6 +1,7 @@
 """Reports are recomputed from authorized server records, never client totals."""
 import csv
 import io
+import os
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -113,7 +114,7 @@ def export(report, extension):
         meta=book.create_sheet('Параметры');meta.append(['ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ',report['period']]);meta.append(['Первичные расхождения не являются установленным ущербом'])
         book.save(out);return out.getvalue(),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     if extension!='pdf':fail('Формат не поддерживается')
-    font=Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+    font=Path(os.getenv('KSU_PDF_FONT', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
     if not font.exists():fail('На сервере отсутствует шрифт DejaVu Sans для PDF',503)
     if 'KSU' not in pdfmetrics.getRegisteredFontNames():pdfmetrics.registerFont(TTFont('KSU',str(font)))
     styles=getSampleStyleSheet();style=styles['Normal'];style.fontName='KSU';style.fontSize=8;style.leading=11
