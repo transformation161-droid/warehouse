@@ -1,0 +1,64 @@
+name: Build portable Windows recovery tool
+on:
+  push:
+    branches: [feat/issue-4-windows-restore]
+    paths:
+      - 'portable/**'
+      - 'deploy/windows/**'
+      - 'server/**'
+      - 'tests/test_windows_restore.py'
+      - '.github/workflows/ksu-windows-restore.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt pyinstaller==6.16.0
+      - name: Test recovery against synthetic data only
+        run: python -m unittest tests.test_windows_restore -v
+      - name: Package existing app, Python runtime, GUI and font
+        run: python -m PyInstaller --noconfirm --clean deploy/windows/ksu-restore.spec
+      - name: Test packaged executable and GUI on Windows
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'dist/KSU-Restore/KSU-Restore.exe').Path
+          $result = Join-Path $env:RUNNER_TEMP 'ksu-packaged-selftest.json'
+          $gui = Join-Path $env:RUNNER_TEMP 'ksu-gui-selftest.txt'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--self-test', $result) -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path $result)) { throw 'Packaged self-test failed' }
+          Get-Content $result
+          $process = Start-Process -FilePath $exe -ArgumentList @('--gui-smoke-test', $gui) -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path $gui)) { throw 'Packaged GUI did not open' }
+          Get-Content $gui
+      - name: Archive portable package with instructions
+        shell: pwsh
+        run: |
+          Copy-Item deploy/windows/ИНСТРУКЦИЯ.txt dist/KSU-Restore/ИНСТРУКЦИЯ.txt
+          Copy-Item LICENSE dist/KSU-Restore/LICENSE.txt
+          # Only the explicit dist package is uploaded; test DBs stay in runner temp.
+          $private = Get-ChildItem dist/KSU-Restore -Recurse -File | Where-Object {
+            $_.Name -match '\.(sqlite3?|db)(-|$)|\.pem$|\.key$|demo-accounts|ИТОГ-ПРОВЕРКИ|synthetic'
+          }
+          if ($private) { throw 'Unexpected private or test files in package' }
+          New-Item -ItemType Directory -Path portable-output | Out-Null
+          Compress-Archive -Path dist/KSU-Restore -DestinationPath portable-output/KSU-Restore-Windows-x64.zip
+          $hash = (Get-FileHash portable-output/KSU-Restore-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  KSU-Restore-Windows-x64.zip" | Set-Content portable-output/SHA256.txt
+          "Build commit: $env:GITHUB_SHA" | Set-Content portable-output/BUILD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KSU-Restore-Windows-x64
+          path: portable-output/*
+          retention-days: 14
+          if-no-files-found: error
