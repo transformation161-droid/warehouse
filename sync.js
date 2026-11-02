@@ -158,7 +158,7 @@ inventoryDetail=function(id){
 async function showHistory(collection='',id=''){
   try{
     const entries=await api('history?'+new URLSearchParams({collection,record_id:id}));
-    openModal(entries.map(entry=>`<article class="timeline-item"><strong>${esc(entry.actor)} · ${esc(entry.operation==='create'?'Создание':'Изменение')} · ${esc(entry.collection)}</strong><small>${esc(entry.at)} UTC · ${esc(entry.record_id)}</small><details><summary>Исходные и новые значения</summary><pre>${esc(JSON.stringify({до:entry.before,после:entry.after},null,2))}</pre></details></article>`).join('')||empty('Изменений нет'),'Журнал изменений','Последние 100 событий. Более ранние события доступны через API с параметром before.',true,'<button class="btn primary" data-action="close-modal">Закрыть</button>');
+    openModal(entries.map(entry=>`<article class="timeline-item"><strong>${esc(entry.actor)} · ${esc(entry.operation==='create'?'Создание':entry.operation==='import'?'Импорт':'Изменение')} · ${esc(entry.collection)}</strong><small>${esc(entry.at)} UTC · ${esc(entry.record_id)}</small><details><summary>Исходные и новые значения</summary><pre>${esc(JSON.stringify({до:entry.before,после:entry.after},null,2))}</pre></details></article>`).join('')||empty('Изменений нет'),'Журнал изменений','Последние 100 событий. Более ранние события доступны через API с параметром before.',true,'<button class="btn primary" data-action="close-modal">Закрыть</button>');
   }catch(error){toast(error.message,true)}
 }
 

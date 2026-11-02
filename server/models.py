@@ -119,6 +119,15 @@ class ImportFile(Model):
     mapping: dict[str, str] | None = None
 
 
+class DecisionPreview(Model):
+    sheet: int = Field(default=0, ge=0, le=19)
+    headerRow: int = Field(default=1, ge=1, le=99999)
+    firstRow: int = Field(default=2, ge=2, le=100000)
+    lastRow: int = Field(default=100000, ge=2, le=100000)
+    mapping: dict[str, str] = Field(default_factory=dict, max_length=17)
+    allowCached: bool = False
+
+
 class MediaFile(Model):
     siteId: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=4_100_000)

@@ -52,6 +52,24 @@ create table if not exists mutations(user_id text references users(id), id text 
 create table if not exists media(id text primary key, site_id text not null, author_id text references users(id),
  content blob not null, thumbnail blob not null, created_at text not null);
 create table if not exists imports(hash text primary key, actor_id text not null, raw_json text not null, created_at text not null);
+create table if not exists decision_records(
+ id text primary key, import_hash text not null references imports(hash), file_sha text not null,
+ sheet text not null, source_row integer not null, site_id text not null,
+ author_id text not null references users(id), data text not null check(json_valid(data)),
+ unique(file_sha,sheet,source_row));
+create index if not exists decisions_site on decision_records(site_id,source_row);
+create trigger if not exists decision_guard before insert on decision_records begin
+ select case when actor_role() not in ('manager','inspector') or new.author_id!=actor_id() or
+ not exists(select 1 from records where collection='sites' and id=new.site_id) or
+ (actor_role()='inspector' and not exists(select 1 from user_sites where user_id=actor_id() and site_id=new.site_id))
+ then raise(abort,'forbidden') end;
+end;
+create trigger if not exists decision_no_update before update on decision_records begin select raise(abort,'immutable import'); end;
+create trigger if not exists decision_no_delete before delete on decision_records begin select raise(abort,'immutable import'); end;
+create trigger if not exists decision_audit after insert on decision_records begin
+ insert into audit(at,actor_id,collection,record_id,operation,after_json)
+ values(strftime('%Y-%m-%dT%H:%M:%fZ','now'),actor_id(),'decisions',new.id,'import',new.data);
+end;
 create trigger if not exists guard_insert before insert on records begin
  select case when actor_role() not in ('manager','inspector') then raise(abort,'forbidden') end;
  select case when new.author_id != actor_id() then raise(abort,'forbidden') end;
