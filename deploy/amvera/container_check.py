@@ -156,7 +156,11 @@ def run(image,caddy,output):
                 finally:
                     for client in accounts.values():client.close()
             Path(output).write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
-        except Exception:
+        except Exception as error:
+            if os.getenv('GITHUB_ACTIONS')=='true':
+                # Surface the synthetic test failure through the Checks API as well as logs.
+                message=(type(error).__name__+': '+str(error)).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                print('::error title=Container acceptance::'+message,flush=True)
             for name in running:
                 print('Container diagnostic:',docker('logs','--tail','35',name,check=False).stderr[-3500:])
             if (folder/'caddy.log').exists():print('Proxy diagnostic:',(folder/'caddy.log').read_text()[-1500:])
