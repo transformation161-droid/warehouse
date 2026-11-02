@@ -54,10 +54,23 @@ def run():
                     expect(i.locator('#decision-progress')).to_contain_text('Проверка пройдена',timeout=15000)
                     expect(i.locator('#decision-mapping select')).to_have_count(17)
                     # The dialog can be closed/reopened without abandoning the owned staged file.
+                    # A delayed poll from a closed dialog must not overwrite a newly opened preview.
+                    i.evaluate("""() => {
+                      window.originalDecisionApi=api;
+                      const ident=decisionJob, meta=structuredClone(decisionMeta);
+                      const delayed=new Promise(resolve=>window.releaseOldDecisionPoll=()=>resolve({...meta,status:'done',committed:999}));
+                      api=(path,options)=>path==='decision-imports/'+ident?delayed:window.originalDecisionApi(path,options);
+                      window.oldDecisionResult=null;
+                      waitDecision().then(()=>window.oldDecisionResult='unexpected').catch(error=>window.oldDecisionResult=error.name);
+                    }""")
                     i.get_by_role('button',name='Закрыть',exact=True).first.click()
                     i.locator('[data-action="decision-import"]').click()
                     expect(i.locator('#decision-progress')).to_contain_text('Проверка пройдена',timeout=15000)
                     expect(i.locator('#decision-file')).to_be_disabled()
+                    i.evaluate('() => { api=window.originalDecisionApi; window.releaseOldDecisionPoll(); }')
+                    i.wait_for_function('window.oldDecisionResult!==null')
+                    assert i.evaluate('window.oldDecisionResult')=='AbortError'
+                    expect(i.locator('#decision-progress')).to_contain_text('Проверка пройдена')
                     i.locator('[data-action="decision-commit"]').click()
                     expect(i.locator('#decision-progress')).to_contain_text('Импорт завершён',timeout=15000)
                     i.get_by_role('button',name='Закрыть',exact=True).first.click()

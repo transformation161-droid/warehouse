@@ -3,19 +3,21 @@
 const decisionFields={sourceId:'ID строки',date:'Дата акта',site:'Объект',document:'Документ',decisionType:'Тип решения',toolType:'Тип инструмента',quantity:'Кол-во',cost:'Стоимость, ₽',residual:'Остаточная стоимость, ₽',reason:'Причина списания',caseCategory:'Категория случая',investigation:'Статус расследования',decision:'Результат / решение',reimbursable:'К возмещению, ₽',reimbursed:'Фактически возмещено, ₽',responsible:'Ответственное лицо / МОЛ',comment:'Комментарий'};
 const decisionRequired=new Set(['date','site','document','decisionType','toolType','quantity','cost']);
 const decisionView={page:1,site:'',data:null,loading:false,error:''};
-let decisionJob=null,decisionMeta=null,decisionBusy=false,decisionDirty=false,decisionAbort=null;
+let decisionJob=null,decisionMeta=null,decisionBusy=false,decisionDirty=false,decisionAbort=null,decisionEpoch=0;
 navEntries.splice(navEntries.findIndex(x=>x[0]==='reports'),0,['decisions','Списания и решения','box']);
 const renderBeforeDecisions=render;
 render=function(){
   renderBeforeDecisions();
   if(ui.page!=='decisions'||!sessionUser)return;
   const data=decisionView.data,rows=data?.rows||[];
+  const syncNote=$('#sync-status');
   $('.workspace').innerHTML=`${heading('Списания и решения','Готовые данные источника. Стоимость, остаточная стоимость и возмещение — разные показатели.',`<button class="btn primary" data-action="decision-import">Импорт XLSX до 30 МБ</button><a class="btn secondary" href="/api/decisions/export.csv?${attr(new URLSearchParams({site:decisionView.site}).toString())}">CSV реестра</a>`)}
   <div class="notice">Записи этого реестра не превращаются в первичную недостачу, утверждённый ущерб или факт инвентаризации автоматически. Сохранённые формулы не пересчитываются сервером.</div>
   <section class="card section-gap"><div class="field"><label>Объект</label><select data-decision-site><option value="">Все доступные</option>${db.sites.map(site=>`<option value="${attr(site.id)}" ${site.id===decisionView.site?'selected':''}>${esc(site.name)}</option>`).join('')}</select></div>
   <p role="status">${decisionView.loading?'Загрузка…':decisionView.error?esc(decisionView.error):`Всего записей: ${data?.total||0}. Страница ${decisionView.page}`}</p>
   ${rows.length?`<div class="table-wrap"><table class="table"><thead><tr>${['Дата','Объект','Документ','Тип решения','Тип инструмента','Кол-во','Стоимость, ₽','Остаточная, ₽','К возмещению, ₽','Возмещено, ₽','Причина','Действия'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${['date','site','document','decisionType','toolType','quantity','cost','residual','reimbursable','reimbursed','reason'].map(k=>`<td>${esc(row[k]??'—')}</td>`).join('')}<td><button class="link" data-action="decision-detail" data-id="${attr(row.id)}">Источник</button><button class="link" data-action="history" data-collection="decisions" data-id="${attr(row.id)}">История</button></td></tr>`).join('')}</tbody></table></div>`:empty('Нет импортированных решений')}
   <div class="actions-row section-gap"><button class="btn secondary" data-decision-page="${Math.max(1,decisionView.page-1)}" ${decisionView.page<=1?'disabled':''}>Назад</button><button class="btn secondary" data-decision-page="${decisionView.page+1}" ${!data||decisionView.page*50>=data.total?'disabled':''}>Далее</button></div></section>`;
+  if(syncNote)$('.workspace').prepend(syncNote);
   if(!data&&!decisionView.loading&&!decisionView.error)loadDecisions();
 };
 async function loadDecisions(){
@@ -26,8 +28,11 @@ async function loadDecisions(){
   finally{decisionView.loading=false;render()}
 }
 async function decisionImport(){
+  if(pending||sending)return toast('Сначала завершите отправку предыдущих изменений',true);
+  const epoch=++decisionEpoch;
   let resume=null;
   try{resume=await api('decision-imports')}catch(error){return toast(error.message,true)}
+  if(epoch!==decisionEpoch)return;
   decisionJob=resume?.id||null;decisionMeta=resume;decisionBusy=false;decisionDirty=false;
   openModal(`<div class="notice">Профиль: готовые списания и решения. Только XLSX до 30 МБ. Выберите входной лист, а не сводку. Для инвентаризации «учёт / факт» используйте отдельный импорт. Данные источника не смешиваются с первичными расхождениями.</div>
     <div class="field section-gap"><label>Книга XLSX</label><input id="decision-file" type="file" accept=".xlsx"></div>
@@ -42,7 +47,7 @@ async function decisionImport(){
     form.elements.allowCached.checked=!!resume.settings?.allowCached;
     showDecisionMeta(resume);form.elements.sheet.value=resume.settings?.sheet??0;showDecisionMeta(resume);
     if(['inspecting','checking','committing'].includes(resume.status)){
-      decisionBusy=true;waitDecision().catch(error=>toast(error.message,true)).finally(()=>{decisionBusy=false;if(decisionMeta)showDecisionMeta(decisionMeta)});
+      decisionBusy=true;waitDecision().catch(error=>{if(epoch===decisionEpoch)toast(error.message,true)}).finally(()=>{if(epoch===decisionEpoch){decisionBusy=false;if(decisionMeta)showDecisionMeta(decisionMeta)}});
     }
   }
 }
@@ -72,9 +77,13 @@ function showDecisionMeta(meta){
     ${meta.rows?.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Строка Excel</th><th>Объект</th><th>Документ</th><th>Тип</th><th>Кол-во</th><th>Стоимость, ₽</th><th>К возмещению, ₽</th><th>Возмещено, ₽</th></tr></thead><tbody>${meta.rows.map(x=>`<tr>${['row','site','document','toolType','quantity','cost','reimbursable','reimbursed'].map(k=>`<td>${esc(x[k]??'—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="tiny muted">Первые 20 строк; длинные тексты в предпросмотре сокращены, исходные значения сохраняются полностью.</p>`:''}`;
   const commit=$('[data-action="decision-commit"]');if(commit)commit.disabled=decisionBusy||decisionDirty||meta.status!=='ready';
 }
-async function waitDecision(){
+async function waitDecision(ident=decisionJob){
+  const epoch=decisionEpoch;
   for(let i=0;i<400;i++){
-    const meta=await api('decision-imports/'+decisionJob);showDecisionMeta(meta);
+    if(epoch!==decisionEpoch)throw Object.assign(Error('Предыдущая обработка закрыта'),{name:'AbortError'});
+    const meta=await api('decision-imports/'+ident);
+    if(epoch!==decisionEpoch)throw Object.assign(Error('Предыдущая обработка закрыта'),{name:'AbortError'});
+    showDecisionMeta(meta);
     if(!['uploading','inspecting','checking','committing'].includes(meta.status))return meta;
     await new Promise(resolve=>setTimeout(resolve,800));
   }
@@ -82,7 +91,7 @@ async function waitDecision(){
 }
 async function previewDecision(){
   if(decisionBusy)return;
-  decisionBusy=true;
+  decisionBusy=true;const epoch=decisionEpoch;
   try{
     if(!decisionJob){
       const file=$('#decision-file')?.files[0];if(!file)throw Error('Выберите XLSX');
@@ -91,14 +100,16 @@ async function previewDecision(){
       const response=await fetch('/api/decision-imports',{method:'POST',credentials:'same-origin',body:file,signal:decisionAbort.signal,
         headers:{'Content-Type':'application/octet-stream','X-CSRF-Token':sessionUser.csrf,'X-KSU-Filename':encodeURIComponent(file.name)}});
       if(!response.ok){const error=await response.json();if(response.status===401){sessionUser=null;showLogin('Войдите заново перед загрузкой книги')}throw Error(error.detail||'Ошибка загрузки')}
-      const uploaded=await response.json();decisionJob=uploaded.id;$('#decision-file').disabled=true;
+      const uploaded=await response.json();
+      if(epoch!==decisionEpoch){await api('decision-imports/'+uploaded.id,{method:'DELETE'});return}
+      decisionJob=uploaded.id;$('#decision-file').disabled=true;
       const inspected=await waitDecision();if(inspected.status!=='uploaded')return;
     }
     const settings=decisionSettings();decisionDirty=false;
     await api('decision-imports/'+decisionJob+'/preview',{method:'POST',body:JSON.stringify(settings)});
     await waitDecision();
-  }catch(error){toast(error.name==='AbortError'?'Загрузка отменена':error.message,true)}
-  finally{decisionBusy=false;decisionAbort=null;if(decisionMeta)showDecisionMeta(decisionMeta)}
+  }catch(error){if(epoch===decisionEpoch)toast(error.name==='AbortError'?'Загрузка отменена':error.message,true)}
+  finally{if(epoch===decisionEpoch){decisionBusy=false;decisionAbort=null;if(decisionMeta)showDecisionMeta(decisionMeta)}}
 }
 document.addEventListener('change',event=>{
   if(event.target.closest('#decision-settings')){decisionDirty=true;const button=$('[data-action="decision-commit"]');if(button)button.disabled=true;
@@ -112,14 +123,15 @@ document.addEventListener('click',async event=>{
   if(action==='decision-import')decisionImport();
   if(action==='decision-preview')await previewDecision();
   if(action==='decision-commit'&&!decisionBusy&&!decisionDirty){
-    decisionBusy=true;button.disabled=true;
+    decisionBusy=true;button.disabled=true;const epoch=decisionEpoch;
     try{await api('decision-imports/'+decisionJob+'/commit',{method:'POST'});const meta=await waitDecision();
       if(meta.status==='done'){decisionView.data=null;toast(meta.duplicate?'Дубли не созданы':'Реестр записан');}}
-    catch(error){toast(error.message,true)}finally{decisionBusy=false;if(decisionMeta)showDecisionMeta(decisionMeta)}
+    catch(error){if(epoch===decisionEpoch)toast(error.message,true)}finally{if(epoch===decisionEpoch){decisionBusy=false;if(decisionMeta)showDecisionMeta(decisionMeta)}}
   }
   if(action==='decision-cancel'){
-    if(decisionAbort)decisionAbort.abort();
-    try{if(decisionJob)await api('decision-imports/'+decisionJob,{method:'DELETE'});decisionBusy=false;closeModal();render()}
+    const epoch=++decisionEpoch,ident=decisionJob;
+    if(decisionAbort)decisionAbort.abort();decisionAbort=null;
+    try{if(ident)await api('decision-imports/'+ident,{method:'DELETE'});if(epoch!==decisionEpoch)return;decisionBusy=false;decisionJob=null;decisionMeta=null;decisionView.data=null;closeModal();render()}
     catch(error){toast(error.message,true)}
   }
   if(action==='decision-detail'){
