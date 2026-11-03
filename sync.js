@@ -74,11 +74,11 @@ render=function(){
 
 function canEditVisit(visit){return !!visit&&visit.status==='planned'&&(sessionUser.role==='manager'||visit.assignedTo===sessionUser.id)}
 const baseVisitForm=visitForm;
-visitForm=function(id){
+visitForm=function(id,date){
  const visit=id?db.visits.find(v=>v.id===id):null;
  if(id&&!canEditVisit(visit))return toast('Этот выезд недоступен для изменения',true);
  if(!db.sites.length)return toast('Нет доступных объектов для планирования',true);
- baseVisitForm(id);
+ baseVisitForm(id,date);
  const form=$('#visit-form'),field=form.elements.assignee.closest('.field');
  if(sessionUser.role==='inspector'){
    form.elements.assignee.value=sessionUser.name;
