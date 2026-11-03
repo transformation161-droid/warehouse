@@ -39,10 +39,12 @@ jobs:
           python smoke_test.py
           python v11_flow_test.py
           python visits_flow_test.py
+          python decisions_flow_test.py
       - name: Check JavaScript syntax
         run: |
           node --check app.js
           node --check sync.js
+          node --check decisions.js
 
   amvera-container:
     runs-on: ubuntu-latest

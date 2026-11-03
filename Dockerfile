@@ -12,7 +12,7 @@ COPY requirements.txt constraints.txt ./
 RUN --mount=type=secret,id=proxy_ca \
     if [ -s /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
     pip install --no-cache-dir -r requirements.txt
-COPY app.js sync.js index.html styles.css ./
+COPY app.js sync.js decisions.js index.html styles.css ./
 COPY server/ ./server/
 COPY deploy/amvera/ ./deploy/amvera/
 COPY deploy/rotate_backups.py ./deploy/rotate_backups.py

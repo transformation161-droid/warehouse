@@ -1,0 +1,51 @@
+{
+  "scope": "local Docker; synthetic ready-decision profile only",
+  "runs": [
+    {
+      "synthetic_only": true,
+      "source_bytes": 18000000,
+      "phases": {
+        "upload_seconds": 1.698,
+        "preview_seconds": 6.197,
+        "commit_seconds": 2.493
+      },
+      "accepted": 11138,
+      "rejected": 0,
+      "all_values_match_source": true,
+      "original_comments_preserved": true,
+      "duplicate_suppressed": true,
+      "no_rows_before_commit": true,
+      "formula_warning": true,
+      "database_bytes": 93421568,
+      "health_samples": 124,
+      "health_failures": 0,
+      "health_max_seconds": 0.082,
+      "memory_peak_bytes": 408993792,
+      "memory_limit": "1073741824",
+      "cpu_limit": "50000 100000"
+    },
+    {
+      "synthetic_only": true,
+      "source_bytes": 30000000,
+      "phases": {
+        "upload_seconds": 2.164,
+        "preview_seconds": 11.105,
+        "commit_seconds": 3.794
+      },
+      "accepted": 18900,
+      "rejected": 0,
+      "all_values_match_source": true,
+      "original_comments_preserved": true,
+      "duplicate_suppressed": true,
+      "no_rows_before_commit": true,
+      "formula_warning": true,
+      "database_bytes": 158437376,
+      "health_samples": 192,
+      "health_failures": 0,
+      "health_max_seconds": 0.083,
+      "memory_peak_bytes": 623005696,
+      "memory_limit": "1073741824",
+      "cpu_limit": "50000 100000"
+    }
+  ]
+}

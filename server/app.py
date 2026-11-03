@@ -1,4 +1,5 @@
 import base64
+from contextlib import asynccontextmanager
 import io
 import json
 import os
@@ -12,13 +13,13 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .database import Database, ROOT, digest, password_hash, password_valid, now
 from .imports import parse_import, commit_import
-from .models import Changes, Login, ImportFile, MediaFile
+from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview
 from .reports import build_report, export
 from .service import accessible, apply_changes, fail
 from .storage import StorageFull, check_storage
@@ -40,11 +41,21 @@ def create_app(path=None, origin=None, secure=None):
         from .maintenance import validate_database
         validate_database(database_path)
     db=Database(database_path)
-    app=FastAPI(title='КСУ Контроль',docs_url=None,redoc_url=None,openapi_url=None)
-    app.state.db=db
+    from .decision_import import Jobs
+    jobs=Jobs(db)
+    @asynccontextmanager
+    async def lifespan(application):
+        try:yield
+        finally:await asyncio.to_thread(jobs.close)
+    app=FastAPI(title='КСУ Контроль',docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
+    app.state.db=db;app.state.import_jobs=jobs
     write_gate=asyncio.Lock()
     backup_gate=threading.BoundedSemaphore(1)
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[urlparse(public_origin).hostname])
+
+    @app.exception_handler(StorageFull)
+    async def storage_limit(request,error):
+        return JSONResponse({'detail':str(error)},status_code=507)
 
     @app.exception_handler(sqlite3.OperationalError)
     async def sqlite_failure(request, error):
@@ -57,14 +68,15 @@ def create_app(path=None, origin=None, secure=None):
         if request.method in ('POST','PUT','PATCH','DELETE'):
             if request.headers.get('origin')!=public_origin:
                 return JSONResponse({'detail':'Недопустимый источник запроса'},status_code=403)
-            # Bounded streaming read: Content-Length is not trusted.
-            body=bytearray()
-            async for chunk in request.stream():
-                body.extend(chunk)
-                if len(body)>6_000_000:
-                    return JSONResponse({'detail':'Запрос больше 6 МБ'},status_code=413)
-            request._body=bytes(body)
-        if request.method in ('POST','PUT','PATCH','DELETE') and os.getenv('KSU_DATA_MAX_BYTES'):
+            # Large XLSX is an authenticated raw stream, never a buffered Base64 JSON body.
+            if request.url.path!='/api/decision-imports':
+                body=bytearray()
+                async for chunk in request.stream():
+                    if len(body)+len(chunk)>6_000_000:
+                        return JSONResponse({'detail':'Запрос больше 6 МБ'},status_code=413)
+                    body.extend(chunk)
+                request._body=bytes(body)
+        if request.method in ('POST','PUT','PATCH','DELETE') and os.getenv('KSU_DATA_MAX_BYTES') and request.url.path!='/api/decision-imports':
             async with write_gate:
                 try:
                     if request.url.path not in ('/api/admin/backup','/api/logout'):
@@ -172,7 +184,7 @@ def create_app(path=None, origin=None, secure=None):
     def history(request:Request, collection:str='', record_id:str='', before:int=2**63-1):
         actor=auth(request)
         with db.connect(actor) as con:
-            records=con.execute('''select a.* from audit a join records r on r.collection=a.collection and r.id=a.record_id
+            records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id from records union all select 'decisions',id,author_id,site_id from decision_records) r on r.collection=a.collection and r.id=a.record_id
                 where a.seq<? and (?='' or a.collection=?) and (?='' or a.record_id=?)
                 and (?='manager' or ((r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
                 and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
@@ -211,6 +223,143 @@ def create_app(path=None, origin=None, secure=None):
             if not row or not accessible(con,actor,row['site_id']):fail('Фото недоступно',404)
             return Response(bytes(row['thumbnail'] if thumbnail else row['content']),media_type='image/jpeg')
 
+    from .decision_import import Rejected, FIELDS, read_meta, write_meta, MAX_FILE
+
+    @app.exception_handler(Rejected)
+    async def import_rejected(request, error):
+        return JSONResponse({'detail':str(error)},status_code=422)
+
+    def owned_job(ident, actor):
+        try:return jobs.get(ident,actor)
+        except Rejected:fail('Импорт не найден',404)
+
+    def job_view(meta):
+        return {k:v for k,v in meta.items() if k not in ('database','actor','created')}
+
+    @app.post('/api/decision-imports')
+    async def upload_decisions(request:Request):
+        from urllib.parse import unquote
+        actor=auth(request,True)
+        name=unquote(request.headers.get('X-KSU-Filename',''))
+        if not name.lower().endswith('.xlsx') or len(name)>200:fail('Выберите файл XLSX, не XLS/XLSM')
+        length=request.headers.get('content-length')
+        if length and (not length.isdigit() or int(length)>MAX_FILE):fail('Файл больше 30 МБ',413)
+        folder=jobs.create(actor,name)
+        try:
+            size=0;digest=__import__('hashlib').sha256()
+            async with asyncio.timeout(300):
+                with (folder/'source.xlsx').open('xb') as output:
+                    async for chunk in request.stream():
+                        size+=len(chunk)
+                        if size>MAX_FILE:fail('Файл больше 30 МБ',413)
+                        if read_meta(folder)['status']=='cancelled':fail('Загрузка отменена',409)
+                        digest.update(chunk)
+                        await asyncio.to_thread(output.write,chunk)
+            if not size:fail('Файл пуст')
+            meta=read_meta(folder);meta.update(sha256=digest.hexdigest(),bytes=size);write_meta(folder,meta)
+            jobs.start(meta['id'],actor,'inspect')
+            return {'id':meta['id'],'status':'inspecting'}
+        except BaseException as error:
+            jobs.cancel(folder.name,actor)
+            if isinstance(error,TimeoutError):fail('Истекло время загрузки (5 минут)',408)
+            raise
+
+    @app.get('/api/decision-imports')
+    def active_decision_import(request:Request):
+        actor=auth(request)
+        if jobs.active:
+            try:
+                _,meta=jobs.get(jobs.active,actor)
+                if meta['status'] not in ('done','error','cancelled'):return job_view(meta)
+            except Rejected:pass
+        return None
+
+    @app.get('/api/decision-imports/{ident}')
+    def decision_import_status(ident:str,request:Request):
+        _,meta=owned_job(ident,auth(request));return job_view(meta)
+
+    @app.post('/api/decision-imports/{ident}/preview')
+    def preview_decisions(ident:str,settings:DecisionPreview,request:Request):
+        actor=auth(request,True);owned_job(ident,actor)
+        if not settings.headerRow<settings.firstRow<=settings.lastRow:fail('Диапазон данных должен идти после заголовков')
+        jobs.start(ident,actor,'preview',settings.model_dump());return {'id':ident,'status':'checking'}
+
+    @app.post('/api/decision-imports/{ident}/commit')
+    def commit_decisions(ident:str,request:Request):
+        actor=auth(request,True);_,meta=owned_job(ident,actor)
+        if meta['status']=='done':return job_view(meta)
+        jobs.start(ident,actor,'commit');return {'id':ident,'status':'committing'}
+
+    @app.delete('/api/decision-imports/{ident}')
+    def cancel_decision_import(ident:str,request:Request):
+        actor=auth(request,True);owned_job(ident,actor)
+        return job_view(jobs.cancel(ident,actor))
+
+    @app.get('/api/decision-imports/{ident}/errors.csv')
+    def decision_import_errors(ident:str,request:Request):
+        folder,meta=owned_job(ident,auth(request))
+        if meta['status'] not in ('ready','invalid','error'):fail('Диагностика ещё формируется',409)
+        def data():
+            import csv
+            from contextlib import closing
+            from .reports import safe_cell
+            output=io.StringIO();writer=csv.writer(output,delimiter=';')
+            writer.writerow(['Строка Excel','Колонка','Поле','Причина','Как исправить'])
+            yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
+            stage=folder/'rows.sqlite3'
+            count=0
+            if stage.exists():
+                with closing(sqlite3.connect(stage.as_uri()+'?mode=ro',uri=True)) as con:
+                    for row in con.execute('select row_no,column_name,field,reason,fix from errors order by seq'):
+                        count+=1
+                        writer.writerow([safe_cell(x) for x in row]);yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
+            if not count:
+                for error in meta.get('errors',[]):
+                    writer.writerow([safe_cell(error.get(k,'')) for k in ('row','column','field','reason','fix')])
+                    yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
+        return StreamingResponse(data(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="import-errors.csv"'})
+
+    def decision_scope(actor,site):
+        clause="(?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id)) and (?='' or d.site_id=?)"
+        return clause,(actor['role'],actor['id'],site,site)
+
+    @app.get('/api/decisions/export.csv')
+    def export_decisions(request:Request,site:str=''):
+        actor=auth(request);clause,params=decision_scope(actor,site)
+        def data():
+            import csv
+            from .reports import safe_cell
+            output=io.StringIO();writer=csv.writer(output,delimiter=';')
+            writer.writerow(list(FIELDS.values())+['Лист-источник','Строка Excel'])
+            yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
+            with db.connect(actor) as con:
+                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by d.rowid',params):
+                    item=json.loads(row['data'])
+                    writer.writerow([safe_cell(item.get(k) or '') for k in FIELDS]+[safe_cell(row['sheet']),row['source_row']])
+                    yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
+        return StreamingResponse(data(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="decisions.csv"'})
+
+    @app.get('/api/decisions')
+    def decisions(request:Request,page:int=1,limit:int=50,site:str=''):
+        actor=auth(request)
+        if page<1 or not 1<=limit<=100:fail('Некорректная страница или размер страницы')
+        clause,params=decision_scope(actor,site)
+        with db.connect(actor) as con:
+            con.execute('begin')
+            count=con.execute('select count(*) from decision_records d where '+clause,params).fetchone()[0]
+            rows=con.execute('select d.* from decision_records d where '+clause+' order by d.rowid desc limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
+        return {'page':page,'limit':limit,'total':count,'rows':[{'id':r['id'],'sourceRow':r['source_row'],'sheet':r['sheet'],
+                 **{k:v for k,v in json.loads(r['data']).items() if k not in ('sourceCells','unmappedCells')}} for r in rows]}
+
+    @app.get('/api/decisions/{ident}')
+    def decision_detail(ident:str,request:Request):
+        actor=auth(request)
+        with db.connect(actor) as con:
+            row=con.execute('select * from decision_records where id=?',(ident,)).fetchone()
+            if not row or not accessible(con,actor,row['site_id']):fail('Запись не найдена',404)
+            provenance=json.loads(con.execute('select raw_json from imports where hash=?',(row['import_hash'],)).fetchone()[0])
+        return {'importStyles':provenance.get('styles',[]),'id':row['id'],'sourceRow':row['source_row'],'sheet':row['sheet'],'fileSha256':row['file_sha'],'importHash':row['import_hash'],'data':json.loads(row['data'])}
+
     @app.post('/api/import/{action}')
     def imports(action:str,payload:ImportFile,request:Request):
         actor=auth(request,True)
@@ -233,6 +382,6 @@ def create_app(path=None, origin=None, secure=None):
         def asset():
             return FileResponse(ROOT/filename)
         return asset
-    for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     return app
