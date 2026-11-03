@@ -372,7 +372,7 @@ class Jobs:
             self.process_id=ident
             log.close();process=self.process
             def monitor():
-                try:process.wait(timeout=240)
+                try:process.wait(timeout=min(240,max(1,int(os.getenv('KSU_IMPORT_PHASE_TIMEOUT_SECONDS','240')))))
                 except subprocess.TimeoutExpired:
                     process.kill();process.wait()
                 with self.guard:

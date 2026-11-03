@@ -207,7 +207,15 @@ def create_app(path=None, origin=None, secure=None):
     def history(request:Request, collection:str='', record_id:str='', before:int=2**63-1):
         actor=auth(request)
         with db.connect(actor) as con:
-            records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id,data from records union all select 'decisions',id,author_id,site_id,data from decision_records) r on r.collection=a.collection and r.id=a.record_id
+            if db.backend=='postgresql':
+                # Audit RLS already enforces author/assignment + site access. Keep the
+                # keyset LIMIT above any register join. A small work_mem avoids a
+                # full-register hashed RLS subplan for each 100-row page.
+                con.execute("set local work_mem='64kB'")
+                records=con.execute("select * from audit where seq<? and (?='' or collection=?) and (?='' or record_id=?) order by seq desc limit 100",
+                                    (before,collection,collection,record_id,record_id)).fetchall()
+            else:
+                records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id,data from records union all select 'decisions',id,author_id,site_id,data from decision_records) r on r.collection=a.collection and r.id=a.record_id
                 where a.seq<? and (?='' or a.collection=?) and (?='' or a.record_id=?)
                 and (?='manager' or ((r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
                 and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
@@ -359,7 +367,7 @@ def create_app(path=None, origin=None, secure=None):
             writer.writerow(list(FIELDS.values())+['Лист-источник','Строка Excel'])
             yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
             with db.connect(actor) as con:
-                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by '+db.decision_order+',d.sheet,d.source_row,d.id',params):
+                for row in db.iterate(con,'select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by '+db.decision_order+',d.sheet,d.source_row,d.id',params):
                     item=json.loads(row['data'])
                     writer.writerow([safe_cell(item.get(k) or '') for k in FIELDS]+[safe_cell(row['sheet']),row['source_row']])
                     yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)

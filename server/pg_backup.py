@@ -12,7 +12,7 @@ import zipfile
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
-from .pg_admin import fingerprints, grant_runtime, TABLES
+from .pg_admin import fingerprints, grant_runtime, grant_backup, TABLES
 from .pg_transport import validate_transport
 
 
@@ -94,7 +94,7 @@ def backup_database(dsn,destination):
         return {'sha256':digest,'bytes':size,'tables':manifest['tables'],'sessions_revoked':True}
 
 
-def restore_database(source,dsn,runtime_role):
+def restore_database(source,dsn,runtime_role,backup_role=None):
     source=Path(source).resolve(strict=True)
     with psycopg.connect(dsn,connect_timeout=10) as connection:
         if connection.execute("select to_regnamespace('ksu')").fetchone()[0]:raise BackupError('Destination schema exists; refusing overwrite')
@@ -119,5 +119,6 @@ def restore_database(source,dsn,runtime_role):
             if connection.execute('select count(*) from ksu.sessions').fetchone()[0] or connection.execute('select count(*) from ksu.attempts').fetchone()[0]:
                 raise BackupError('Restored sessions must be empty')
             grant_runtime(connection,runtime_role)
+            if backup_role:grant_backup(connection,backup_role)
             if connection.execute("select count(*) from pg_constraint where connamespace='ksu'::regnamespace and not convalidated").fetchone()[0]:raise BackupError('Unvalidated constraints')
         return {'verified':True,'tables':actual,'sessions_revoked':True,'package_sha256':checksum(source)}
