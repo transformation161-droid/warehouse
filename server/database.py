@@ -194,6 +194,9 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as con:
             con.executescript(SCHEMA)
+            if not con.execute("select 1 from sqlite_master where type='table' and name='decision_documents'").fetchone():
+                from .decision_version_schema import schema
+                con.executescript(schema())
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -214,6 +217,9 @@ class Database:
                 raise ValueError('Existing database exceeds the configured size limit')
         con.create_function('actor_id', 0, lambda: actor['id'] if actor else '')
         con.create_function('actor_role', 0, lambda: actor['role'] if actor else '')
+        con.create_function('sha256',1,lambda value:hashlib.sha256(value.encode()).hexdigest())
+        con.create_function('accessible',1,lambda site:bool(actor and (actor['role']=='manager' or con.execute(
+            'select 1 from user_sites where user_id=? and site_id=?',(actor['id'],site)).fetchone())))
         try:
             with con:
                 yield con

@@ -124,10 +124,12 @@ def main():
     if not args.backup_only:
         with local_cluster() as cluster:
             env=test_environment(cluster)
+            from tests.pg_tools import prepare
+            env.update(prepare(args.image,output/'client-tools'))
             with (output/'postgres-tests.txt').open('w') as log:
-                subprocess.run([sys.executable,'-m','unittest','tests.test_postgres','-v'],env=env,stdout=log,stderr=log,check=True)
+                subprocess.run([sys.executable,'-m','unittest','tests.test_postgres','tests.test_postgres_versions','-v'],env=env,stdout=log,stderr=log,check=True)
             packaged_cli(cluster,args.image,output)
-            for script in ('smoke_test.py','v11_flow_test.py','visits_flow_test.py','decisions_flow_test.py','calendar_flow_test.py'):
+            for script in ('smoke_test.py','v11_flow_test.py','visits_flow_test.py','decisions_flow_test.py','calendar_flow_test.py','decision_versions_flow_test.py'):
                 name='ksu_browser_'+uuid4().hex
                 admin=make_conninfo(**{**conninfo_to_dict(cluster['source']['admin']),'dbname':name})
                 runtime=make_conninfo(**{**conninfo_to_dict(cluster['source']['runtime']),'dbname':name})
@@ -147,7 +149,7 @@ def main():
             '-v',str(Path.cwd())+':/source:ro','-v',str(output)+':/out:rw',
             '-e','PYTHONPATH=/source','-e','KSU_TEST_DATA_DIR=/out','-w','/source',args.image,
             'python','-m','experiments.postgres.local_stack','/out/postgres-backup-metrics.json',stdout=log,stderr=log)
-    print('PASS: real PostgreSQL contracts, five browser scenarios and independent >=150 MiB backup/restore')
+    print('PASS: real PostgreSQL contracts, six browser scenarios and independent >=150 MiB backup/restore')
 
 
 if __name__=='__main__':main()

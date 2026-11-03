@@ -20,7 +20,7 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .database import Database, ROOT, digest, password_hash, password_valid, now, is_postgres
 from .imports import parse_import, commit_import
-from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview
+from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview, DecisionVersionPreview, DecisionVersionConfirm
 from .reports import build_report, export
 from .service import accessible, apply_changes, fail
 from .storage import StorageFull, check_storage
@@ -215,9 +215,9 @@ def create_app(path=None, origin=None, secure=None):
                 records=con.execute("select * from audit where seq<? and (?='' or collection=?) and (?='' or record_id=?) order by seq desc limit 100",
                                     (before,collection,collection,record_id,record_id)).fetchall()
             else:
-                records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id,data from records union all select 'decisions',id,author_id,site_id,data from decision_records) r on r.collection=a.collection and r.id=a.record_id
+                records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id,data from records union all select 'decisions',id,author_id,site_id,data from decision_records union all select 'decisionVersions',id,author_id,site_id,'{}' from decision_documents) r on r.collection=a.collection and r.id=a.record_id
                 where a.seq<? and (?='' or a.collection=?) and (?='' or a.record_id=?)
-                and (?='manager' or ((r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
+                and (?='manager' or ((r.collection='decisionVersions' or r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
                 and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
                 order by a.seq desc limit 100''',(before,collection,collection,record_id,record_id,actor['role'],actor['id'],actor['id'],actor['id'])).fetchall()
             names={r['id']:r['name'] for r in con.execute('select id,name from users')}
@@ -258,6 +258,7 @@ def create_app(path=None, origin=None, secure=None):
             return Response(bytes(row['thumbnail'] if thumbnail else row['content']),media_type='image/jpeg')
 
     from .decision_import import Rejected, FIELDS, read_meta, write_meta, MAX_FILE
+    from .decision_versions import ACTIVE,head,comparison,amounts,total,add,encoded_total
 
     @app.exception_handler(Rejected)
     async def import_rejected(request, error):
@@ -321,7 +322,47 @@ def create_app(path=None, origin=None, secure=None):
     @app.post('/api/decision-imports/{ident}/commit')
     def commit_decisions(ident:str,request:Request):
         actor=auth(request,True);_,meta=owned_job(ident,actor)
+        if meta.get('versionPlan'):fail('Подтвердите сравнение через операцию замещения',422)
         if meta['status']=='done':return job_view(meta)
+        jobs.start(ident,actor,'commit');return {'id':ident,'status':'committing'}
+
+    @app.post('/api/decision-imports/{ident}/version-preview')
+    def preview_version(ident:str,settings:DecisionVersionPreview,request:Request):
+        actor=auth(request,True)
+        if actor['role']!='manager':fail('Замещение подтверждает только руководитель',403)
+        owned_job(ident,actor);jobs.start(ident,actor,'version',settings.model_dump());return {'id':ident,'status':'checking'}
+
+    @app.get('/api/decision-imports/{ident}/comparison')
+    def version_comparison(ident:str,request:Request,page:int=1,limit:int=50):
+        actor=auth(request)
+        if actor['role']!='manager':fail('Сравнение замещения доступно руководителю',403)
+        if page<1 or not 1<=limit<=100:fail('Некорректная страница')
+        folder,meta=owned_job(ident,actor)
+        if meta['status']!='ready':fail('Дождитесь сравнения',409)
+        return comparison(folder,page,limit)
+
+    @app.get('/api/decision-imports/{ident}/version-inputs')
+    def version_inputs(ident:str,request:Request,page:int=1,limit:int=20):
+        actor=auth(request)
+        if actor['role']!='manager':fail('Только руководитель',403)
+        if page<1 or not 1<=limit<=100:fail('Некорректная страница')
+        folder,meta=owned_job(ident,actor)
+        if meta['status']!='ready':fail('Сначала проверьте книгу',409)
+        from contextlib import closing
+        with closing(sqlite3.connect(folder/'rows.sqlite3')) as stage:
+            return {'total':meta['accepted'],'rows':[{'row':n,**{k:v for k,v in json.loads(data).items() if k in FIELDS}}
+                for n,data in stage.execute('select number,data from rows order by number limit ? offset ?',(limit,(page-1)*limit))]}
+
+    @app.post('/api/decision-imports/{ident}/version-confirm')
+    def confirm_version(ident:str,body:DecisionVersionConfirm,request:Request):
+        actor=auth(request,True)
+        if actor['role']!='manager':fail('Замещение подтверждает только руководитель',403)
+        with jobs.guard:
+            folder,meta=owned_job(ident,actor);plan=meta.get('versionPlan')
+            if not plan or not plan['ready'] or body.token!=plan['token']:fail('Нужно актуальное сравнение без неоднозначностей',409)
+            if meta['status']=='done':return job_view(meta)
+            if meta['status']!='ready':fail('Дождитесь текущей операции',409)
+            meta['confirmedVersionToken']=body.token;write_meta(folder,meta)
         jobs.start(ident,actor,'commit');return {'id':ident,'status':'committing'}
 
     @app.delete('/api/decision-imports/{ident}')
@@ -353,9 +394,47 @@ def create_app(path=None, origin=None, secure=None):
                     yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
         return StreamingResponse(data(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="import-errors.csv"'})
 
-    def decision_scope(actor,site):
+    def decision_scope(actor,site,document='',history=False,version=0,source_id=''):
         clause="(?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id)) and (?='' or d.site_id=?)"
-        return clause,(actor['role'],actor['id'],site,site)
+        params=(actor['role'],actor['id'],site,site)
+        if document:
+            clause+=' and exists(select 1 from decision_entries entry where entry.record_id=d.id and entry.document_id=?)';params+=(document,)
+        if source_id:
+            clause+=" and json_extract(d.data,'$.sourceId')=?";params+=(source_id,)
+        if version:
+            if not document or version<1:fail('Для исторической версии выберите документ',422)
+            clause+=' and exists(select 1 from decision_entries entry join decision_versions intro on intro.id=entry.version_id where entry.record_id=d.id and intro.number<=?) and not exists(select 1 from decision_retirements retired join decision_versions ended on ended.id=retired.version_id where retired.record_id=d.id and ended.number<=?)';params+=(version,version)
+        elif not history:clause+=' and '+ACTIVE
+        return clause,params
+
+    @app.get('/api/decisions/totals')
+    def decision_totals(request:Request,site:str='',documentId:str='',version:int=0):
+        actor=auth(request);clause,params=decision_scope(actor,site,documentId,version=version);values=total();count=0
+        with db.connect(actor) as con:
+            for row in db.iterate(con,'select d.data from decision_records d where '+clause,params):add(values,json.loads(row['data']));count+=1
+        return {'rows':count,'totals':encoded_total(values),'scope':'historical' if version else 'active'}
+
+    @app.get('/api/decision-documents')
+    def decision_documents(request:Request,site:str='',q:str='',page:int=1,limit:int=50):
+        actor=auth(request)
+        if page<1 or not 1<=limit<=100 or len(q)>200:fail('Некорректная страница или поиск')
+        with db.connect(actor) as con:
+            clause="(?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=doc.site_id)) and (?='' or doc.site_id=?) and (?='' or doc.label like ?)"
+            params=(actor['role'],actor['id'],site,site,q,'%'+q+'%')
+            count=con.execute('select count(*) from decision_documents doc where '+clause,params).fetchone()[0]
+            rows=con.execute('''select doc.*,(select max(number) from decision_versions where document_id=doc.id) as version,
+              (select count(*) from decision_entries entry join decision_records d on d.id=entry.record_id where entry.document_id=doc.id and '''+ACTIVE+''') as active_rows
+              from decision_documents doc where '''+clause+' order by doc.created_at desc,doc.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
+        return {'total':count,'page':page,'rows':[dict(row) for row in rows]}
+
+    @app.get('/api/decision-documents/{ident}/versions')
+    def document_versions(ident:str,request:Request,before:int=2**31-1):
+        actor=auth(request)
+        with db.connect(actor) as con:
+            document=con.execute('select * from decision_documents where id=?',(ident,)).fetchone()
+            if not document or not accessible(con,actor,document['site_id']):fail('Документ не найден',404)
+            rows=con.execute('select v.*,u.name as actor from decision_versions v join users u on u.id=v.author_id where document_id=? and number<? order by number desc limit 100',(ident,before)).fetchall()
+        return [{k:v for k,v in dict(row).items() if k!='summary_json'}|{'summary':json.loads(row['summary_json'])} for row in rows]
 
     @app.get('/api/decisions/export.csv')
     def export_decisions(request:Request,site:str=''):
@@ -374,15 +453,15 @@ def create_app(path=None, origin=None, secure=None):
         return StreamingResponse(data(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="decisions.csv"'})
 
     @app.get('/api/decisions')
-    def decisions(request:Request,page:int=1,limit:int=50,site:str=''):
+    def decisions(request:Request,page:int=1,limit:int=50,site:str='',documentId:str='',history:bool=False,version:int=0,sourceId:str=''):
         actor=auth(request)
         if page<1 or not 1<=limit<=100:fail('Некорректная страница или размер страницы')
-        clause,params=decision_scope(actor,site)
+        clause,params=decision_scope(actor,site,documentId,history,version,sourceId)
         with db.connect(actor) as con:
             con.execute('begin')
             count=con.execute('select count(*) from decision_records d where '+clause,params).fetchone()[0]
-            rows=con.execute('select d.* from decision_records d where '+clause+' order by '+db.decision_order+' desc,d.source_row desc,d.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
-        return {'page':page,'limit':limit,'total':count,'rows':[{'id':r['id'],'sourceRow':r['source_row'],'sheet':r['sheet'],
+            rows=con.execute('select d.*,entry.document_id,intro.number as version,case when '+ACTIVE+' then 1 else 0 end as active from decision_records d left join decision_entries entry on entry.record_id=d.id left join decision_versions intro on intro.id=entry.version_id where '+clause+' order by '+db.decision_order+' desc,d.source_row desc,d.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
+        return {'page':page,'limit':limit,'total':count,'scope':'historical' if history or version else 'active','rows':[{'id':r['id'],'sourceRow':r['source_row'],'sheet':r['sheet'],'documentId':r['document_id'],'version':r['version'],'active':bool(r['active']),
                  **{k:v for k,v in json.loads(r['data']).items() if k not in ('sourceCells','unmappedCells')}} for r in rows]}
 
     @app.get('/api/decisions/{ident}')
@@ -392,7 +471,10 @@ def create_app(path=None, origin=None, secure=None):
             row=con.execute('select * from decision_records where id=?',(ident,)).fetchone()
             if not row or not accessible(con,actor,row['site_id']):fail('Запись не найдена',404)
             provenance=json.loads(db.import_metadata(con,row['import_hash']))
-        return {'importStyles':provenance.get('styles',[]),'id':row['id'],'sourceRow':row['source_row'],'sheet':row['sheet'],'fileSha256':row['file_sha'],'importHash':row['import_hash'],'data':json.loads(row['data'])}
+            entry=con.execute('select e.document_id,v.number as version from decision_entries e join decision_versions v on v.id=e.version_id where record_id=?',(ident,)).fetchone()
+            retired=con.execute('select version_id from decision_retirements where record_id=?',(ident,)).fetchone()
+        return {'importStyles':provenance.get('styles',[]),'id':row['id'],'sourceRow':row['source_row'],'sheet':row['sheet'],'fileSha256':row['file_sha'],'importHash':row['import_hash'],'data':json.loads(row['data']),
+                'documentId':entry['document_id'] if entry else None,'version':entry['version'] if entry else None,'active':not retired,'retiredByVersion':retired['version_id'] if retired else None}
 
     @app.post('/api/import/{action}')
     def imports(action:str,payload:ImportFile,request:Request):

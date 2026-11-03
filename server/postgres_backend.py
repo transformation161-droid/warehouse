@@ -66,9 +66,9 @@ class PostgresDatabase:
             if any(role.values()) or owner and owner[0]:raise ValueError('PostgreSQL runtime must be a non-owner without BYPASSRLS/superuser')
             if con.execute('select exists(select 1 from pg_auth_members where member=(select oid from pg_roles where rolname=current_user))').fetchone()[0]:raise ValueError('Runtime role memberships are forbidden')
             if con.execute("select exists(select 1 from pg_class where relnamespace='ksu'::regnamespace and relowner=(select oid from pg_roles where rolname=current_user))").fetchone()[0]:raise ValueError('Runtime must not own PostgreSQL objects')
-            if con.execute("select count(*) from pg_class where relnamespace='ksu'::regnamespace and relname in ('records','media','decision_records','audit','user_sites','mutations','imports') and relrowsecurity").fetchone()[0]!=7:raise ValueError('Required RLS policies are not enabled')
+            if con.execute("select count(*) from pg_class where relnamespace='ksu'::regnamespace and relname in ('records','media','decision_records','audit','user_sites','mutations','imports','decision_documents','decision_versions','decision_entries','decision_retirements') and relrowsecurity").fetchone()[0]!=11:raise ValueError('Required RLS policies are not enabled')
             if con.execute("select has_table_privilege(current_user,'ksu.users','UPDATE')").fetchone()[0]:raise ValueError('Runtime cannot administer user roles')
-            if con.execute('select coalesce(max(version),0) from schema_version').fetchone()[0]!=1:raise ValueError('Unsupported PostgreSQL schema version')
+            if con.execute('select coalesce(max(version),0) from schema_version').fetchone()[0]!=2:raise ValueError('PostgreSQL schema v2 required; run the offline upgrade before starting')
 
     @contextmanager
     def connect(self,actor=None):

@@ -1,7 +1,7 @@
 name: PostgreSQL migration and independent restore
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry]
 permissions:
   contents: read
 defaults:
@@ -33,6 +33,7 @@ jobs:
             var/postgres-checks/*.txt
             var/postgres-checks/postgres-backup-metrics.json
             /tmp/ksu_calendar_*.png
+            /tmp/ksu_versions_*.png
           retention-days: 7
   windows-script:
     runs-on: windows-latest

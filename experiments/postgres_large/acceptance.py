@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -43,6 +44,23 @@ def tiny_book(path,cost,source_id='0000000001'):
     sheet.append([source_id,'2026-11-01','ДЕМО · Нова','ДЕМО · Акт','ДЕМО · Списание','ДЕМО · ТМЦ','1',cost,'5','ДЕМО','ДЕМО','ДЕМО','ДЕМО','0','0','ДЕМО','ДЕМО · Исправление'])
     book.save(path)
     return path
+
+
+def corrected_book(source,destination):
+    """Change one known synthetic cached value; copy ZIP members in bounded chunks."""
+    old=b'<c r="H2" t="n"><v>30.3750</v></c>';new=b'<c r="H2" t="n"><v>32.3750</v></c>';changed=False
+    with zipfile.ZipFile(source) as original,zipfile.ZipFile(destination,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as target:
+        for member in original.infolist():
+            with original.open(member) as src,target.open(member.filename,'w') as dst:
+                first=src.read(65536)
+                if member.filename=='xl/worksheets/sheet1.xml':
+                    assert old in first;first=first.replace(old,new,1);changed=True
+                dst.write(first);shutil.copyfileobj(src,dst,65536)
+    assert changed
+    padding=Path(source).stat().st_size-Path(destination).stat().st_size
+    assert 20<padding<65536
+    with zipfile.ZipFile(destination,'a') as target:target.comment=b'DEMO CORRECTION'+b' '*(padding-len(b'DEMO CORRECTION'))
+    assert Path(destination).stat().st_size==18000000 and checksum(source)!=checksum(destination)
 
 
 def require(response):
@@ -145,7 +163,7 @@ class Case:
             result={'database_bytes':con.execute('select pg_database_size(current_database())').fetchone()[0],
                     'wal_disk_bytes':int(con.execute('select coalesce(sum(size),0) from pg_ls_waldir()').fetchone()[0]),
                     'wal_lsn':str(con.execute('select pg_current_wal_lsn()').fetchone()[0]),'tables':{}}
-            for table in ('decision_records','audit','imports'):
+            for table in ('decision_records','audit','imports','decision_documents','decision_versions','decision_entries','decision_retirements'):
                 total,heap,indexes=con.execute('select pg_total_relation_size(%s),pg_relation_size(%s),pg_indexes_size(%s)',('ksu.'+table,)*3).fetchone()
                 result['tables'][table]={'total_bytes':total,'heap_bytes':heap,'index_bytes':indexes,'toast_and_aux_bytes':total-heap-indexes}
             result['counts']=self.counts()
@@ -159,6 +177,7 @@ class Case:
         assert self.counts()==before
         metrics['normalized_bytes']=meta['normalizedBytes'];metrics['admission_estimate_bytes']=meta['normalizedBytes']*3+meta['accepted']*192+2*1024*1024
         metrics['before']=self.stats();self.mark('commit');start=time.monotonic();done=self.commit(ident);metrics['commit_seconds']=round(time.monotonic()-start,3)
+        metrics['admission_estimate_bytes']=done.get('admissionEstimateBytes',metrics['admission_estimate_bytes'])
         if done['status']!='done':
             assert allow_cap and done['status']=='error' and 'cap reached' in done.get('message',''),done.get('message')
             assert self.counts()==before;metrics.update(outcome='cap_rejected',message=done['message'],rollback=True,after=self.stats());return metrics
@@ -336,17 +355,49 @@ class Case:
                 'lowered_one_second_timeout_recovered':True,'actual_oom_injected':False,'after_rollback':rollback_stats,'counts_after_failures':committed}
 
     def corrected_version(self):
-        self.mark('corrected-version');original=None
-        for cost in ('10.0000','12.0000'):
-            path=tiny_book(self.root/('DEMO-'+cost+'.xlsx'),cost)
-            ident=self.upload(path);assert self.preview(ident)['status']=='ready';assert self.commit(ident)['committed']==1
-            if original is None:original=checksum(path)
-            else:assert original!=checksum(path)
-        rows=require(self.clients['manager'].get('/api/decisions'))
-        assert rows['total']==2 and len({row['sourceId'] for row in rows['rows']})==1
-        assert sum(Decimal(row['cost']) for row in rows['rows'])==Decimal(22)
-        return {'new_sha_same_source_id_keeps_both_versions':True,'rows':2,'naive_sum':'22.0000',
-                'intended_latest_cost':'12.0000','kpi_release_blocked_pending_version_policy':True}
+        self.mark('corrected-version')
+        original=tiny_book(self.root/'DEMO-original.xlsx','10.0000');corrected=tiny_book(self.root/'DEMO-corrected.xlsx','12.0000')
+        ident=self.upload(original);assert self.preview(ident)['status']=='ready';assert self.commit(ident)['committed']==1
+        old=require(self.clients['manager'].get('/api/decisions'))['rows'][0]
+        ident=self.upload(corrected);assert self.preview(ident)['status']=='ready';assert self.commit(ident)['status']=='error'
+        assert require(self.clients['manager'].get('/api/decisions/totals'))['totals']['cost']=='10.0000'
+        ident=self.upload(corrected,'manager');assert self.preview(ident,'manager')['status']=='ready'
+        settings={'documentId':old['documentId'],'expectedVersion':1,'mode':'full','reason':'ДЕМО · Явная коррекция 10 → 12'}
+        require(self.clients['manager'].post('/api/decision-imports/'+ident+'/version-preview',json=settings))
+        plan=self.wait(ident,'manager')['versionPlan'];assert plan['ready'] and plan['summary']['after']['cost']=='12.0000'
+        require(self.clients['manager'].post('/api/decision-imports/'+ident+'/version-confirm',json={'token':plan['token']}));assert self.wait(ident,'manager')['status']=='done'
+        assert require(self.clients['manager'].get('/api/decisions/totals'))['totals']['cost']=='12.0000'
+        assert require(self.clients['manager'].get('/api/decisions'))['total']==1
+        assert require(self.clients['manager'].get('/api/decisions?history=true'))['total']==2
+        return {'new_sha_requires_explicit_manager_selection':True,'active_rows':1,'historical_rows':2,'active_cost':'12.0000','double_count_prevented':True}
+
+    def large_correction(self,book,expected):
+        self.mark('generate-correction');path=self.root/'DEMO-corrected-18.xlsx';corrected_book(book,path)
+        doc=require(self.clients['manager'].get('/api/decision-documents'))['rows'][0]['id']
+        ident=self.upload(path,'manager');assert self.preview(ident,'manager')['status']=='ready'
+        settings={'documentId':doc,'expectedVersion':1,'mode':'full','reason':'ДЕМО · Одна сумма +2 в книге 18 МБ'}
+        self.mark('large-compare');start=time.monotonic();require(self.clients['manager'].post('/api/decision-imports/'+ident+'/version-preview',json=settings))
+        meta=self.wait(ident,'manager');assert meta['status']=='ready',meta.get('message');plan=meta['versionPlan']
+        assert plan['ready'] and plan['summary']['counts']=={'added':0,'changed':1,'removed':0,'unchanged':expected['rows']-2}
+        comparison_seconds=round(time.monotonic()-start,3)
+        require(self.clients['manager'].post('/api/decision-imports/'+ident+'/version-confirm',json={'token':plan['token']}));done=self.wait(ident,'manager');assert done['status']=='done',done.get('message')
+        self.mark('verify-corrected-all');checked=0
+        with psycopg.connect(self.admin) as con,con.cursor(name='all_corrected') as cursor:
+            cursor.itersize=64;cursor.execute('select n.data,o.data,n.source_row from ksu.decision_entries e join ksu.decision_records n on n.id=e.record_id join ksu.decision_records o on o.id=e.replaces_id where e.version_id=%s order by n.source_row',(plan['token'],))
+            for new,old,number in cursor:
+                actual=json.loads(new);prior=json.loads(old)
+                for field in FIELDS:
+                    if field=='cost' and number==2:assert Decimal(actual[field])==Decimal(prior[field])+2
+                    else:assert actual[field]==prior[field]
+                checked+=1
+        assert checked==expected['rows']-1
+        assert require(self.clients['manager'].get('/api/decisions'))['total']==checked
+        assert require(self.clients['manager'].get('/api/decisions?history=true'))['total']==checked*2
+        totals=require(self.clients['manager'].get('/api/decisions/totals'))['totals']
+        assert {k:Decimal(v) for k,v in totals.items()}=={k:Decimal(v)+(2 if k=='cost' else 0) for k,v in expected['totals'].items()}
+        self.verify(book,expected)
+        return path,doc,{'file_bytes':path.stat().st_size,'active_rows':checked,'historical_rows':checked*2,'compare_seconds':comparison_seconds,
+            'counts':plan['summary']['counts'],'totals':totals,'all_fields_checked':True,'original_preserved':True,'stats':self.stats()}
 
 
 def run(output):
@@ -403,6 +454,31 @@ def run(output):
             restored.stop_server()
             fault=Case(root,'faults',resources);cases.append(fault);metrics['faults']=fault.failures(books['18']);fault.stop_server()
             version=Case(root,'version-probe',resources);cases.append(version);metrics['corrected_version']=version.corrected_version()
+            version.stop_server()
+            large=Case(root,'large-version',resources);cases.append(large)
+            big_book=root/'DEMO-one-document-18.xlsx';large.mark('generate-one-document')
+            big_expected=generate(big_book,18000000,variant=1,site='ДЕМО · Нова',rich=True,scratch=root,document='ДЕМО · Большой исправляемый акт')
+            metrics['large_version_fixture']={k:v for k,v in big_expected.items() if k!='site'}
+            large.import_book(big_book,big_expected,repeat=False)
+            corrected,doc,metrics['large_version']=large.large_correction(big_book,big_expected)
+            package,metrics['large_version_backup']=large.backup_http('large-version')
+            large.stop_server();resources.phase='version-independent-restore'
+            restored_version=Case(root,'restored-version',resources,restoring=(package,large));cases.append(restored_version)
+            assert restored_version.restored['tables']==metrics['large_version_backup']['tables']
+            totals=require(restored_version.clients['manager'].get('/api/decisions/totals'))
+            assert totals['rows']==big_expected['rows']-1 and totals['totals']==metrics['large_version']['totals']
+            previous=require(restored_version.clients['manager'].get('/api/decisions/totals',params={'documentId':doc,'version':1}))
+            assert Decimal(previous['totals']['cost'])==Decimal(big_expected['totals']['cost'])
+            first=require(restored_version.clients['manager'].get('/api/decisions',params={'documentId':doc,'sourceId':'0000100001'}))['rows'][0]
+            small=restored_version.root/'DEMO-partial.xlsx';book=Workbook();sheet=book.active;sheet.append(list(FIELDS.values()))
+            first['cost']=format(Decimal(first['cost'])+1,'.4f');sheet.append([first[k] for k in FIELDS]);book.save(small)
+            ident=restored_version.upload(small,'manager');assert restored_version.preview(ident,'manager')['status']=='ready'
+            settings={'documentId':doc,'expectedVersion':2,'mode':'partial','targetIds':[first['id']],'reason':'ДЕМО · Частичная коррекция после независимого restore'}
+            require(restored_version.clients['manager'].post('/api/decision-imports/'+ident+'/version-preview',json=settings));plan=restored_version.wait(ident,'manager')['versionPlan'];assert plan['ready']
+            require(restored_version.clients['manager'].post('/api/decision-imports/'+ident+'/version-confirm',json={'token':plan['token']}));assert restored_version.wait(ident,'manager')['status']=='done'
+            assert Decimal(require(restored_version.clients['manager'].get('/api/decisions/totals'))['totals']['cost'])==Decimal(big_expected['totals']['cost'])+3
+            metrics['large_version_restore']={'all_fingerprints_match':True,'historical_version_1_preserved':True,'active_rows':totals['rows'],'partial_version_3_after_restore':True}
+            _,metrics['version_backup_after_restore']=restored_version.backup_http('version-3')
             for case in cases:assert not any(p['failures'] for p in case.health.values()),case.health
             metrics['health']={case.name:case.health for case in cases}
         except Exception as error:
