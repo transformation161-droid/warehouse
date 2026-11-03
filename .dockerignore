@@ -18,6 +18,7 @@
 !decisions.js
 
 !calendar.js
+!writeoff_analytics.js
 !Dockerfile.postgres
 !server/postgres/
 !server/postgres/*.sql

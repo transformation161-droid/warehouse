@@ -79,6 +79,10 @@ class PostgreSQLVersions(versions.Versions):
                     with TestClient(app,headers={'Origin':test_api.ORIGIN}) as client:
                         login=client.post('/api/login',json={'username':'manager','password':test_api.MANAGER_PASSWORD});self.assertEqual(login.status_code,200);client.headers['X-CSRF-Token']=login.json()['csrf']
                         self.assertEqual(client.get('/api/decisions/totals').json()['totals']['cost'],'12')
+                        analytics=client.get('/api/writeoff-analytics').json()
+                        self.assertEqual(analytics['metrics']['cost']['value'],'12')
+                        self.assertEqual(analytics['metrics']['decisions']['value'],'1')
+                        self.assertEqual(analytics['rows'][0]['currentVersion'],2)
                         self.assertEqual(client.get('/api/decisions?history=true').json()['total'],2)
                         self.assertEqual(client.get('/api/decision-documents/'+old['documentId']+'/versions').json()[0]['number'],2)
                         ident,meta=self.correction([self.row(cost='13')],old['documentId'],client=client)

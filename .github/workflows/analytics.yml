@@ -1,0 +1,33 @@
+name: PostgreSQL analytics acceptance
+on:
+  pull_request:
+    branches: [main, feat/issue-21-decision-versions]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  analytics-24k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
+      - name: 24000 active PostgreSQL facts, independent totals, four exact exports, scoped rights and independent recovery
+        run: python -m experiments.analytics.run --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/analytics-acceptance"
+      - name: Publish only synthetic aggregate metrics and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-24k
+          path: |
+            var/analytics-acceptance/analytics-*.json
+            var/analytics-acceptance/analytics-log.txt
+          retention-days: 14

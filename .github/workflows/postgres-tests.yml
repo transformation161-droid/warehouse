@@ -1,7 +1,7 @@
 name: PostgreSQL migration and independent restore
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions]
 permissions:
   contents: read
 defaults:
@@ -22,7 +22,7 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Build local PostgreSQL tools image, no data or credentials
         run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
-      - name: Real PostgreSQL contracts, five browsers, large independent recovery
+      - name: Real PostgreSQL contracts, seven browsers, large independent recovery
         run: python -m tests.pg_environment --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-checks"
       - name: Publish only logs and aggregate synthetic metrics
         if: always()
@@ -34,6 +34,7 @@ jobs:
             var/postgres-checks/postgres-backup-metrics.json
             /tmp/ksu_calendar_*.png
             /tmp/ksu_versions_*.png
+            /tmp/ksu_analytics_*.png
           retention-days: 7
   windows-script:
     runs-on: windows-latest

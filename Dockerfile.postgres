@@ -10,7 +10,7 @@ COPY requirements.txt constraints.txt ./
 RUN --mount=type=secret,id=proxy_ca \
     if [ -s /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
     pip install --no-cache-dir -r requirements.txt httpx==0.28.1
-COPY app.js sync.js decisions.js calendar.js index.html styles.css ./
+COPY app.js sync.js decisions.js calendar.js writeoff_analytics.js index.html styles.css ./
 COPY server/ ./server/
 RUN chmod -R a+rX /app && groupadd --gid 1000 ksu && useradd --uid 1000 --gid 1000 --no-create-home ksu
 USER 1000:1000

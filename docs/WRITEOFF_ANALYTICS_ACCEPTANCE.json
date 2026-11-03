@@ -1,0 +1,332 @@
+{
+  "local_measurement_date": "2026-11-03",
+  "base_commit": "4311f5e93cfdadc6b7c4d97d61defe4c7a5ee2e9",
+  "tests": {
+    "sqlite_passed": 85,
+    "postgresql_passed": 49,
+    "browser_scenarios": 14
+  },
+  "acceptance": {
+    "synthetic_only": true,
+    "official_reporting": false,
+    "rows": 24000,
+    "database_cap_bytes": 268435456,
+    "fixture_seconds": 25.709,
+    "independent_totals": {
+      "documents": "720",
+      "decisions": "24000",
+      "quantity": "38400.004800",
+      "cost": "85423873.8987",
+      "residual": "120.0000",
+      "reimbursable": "79073.6250",
+      "reimbursed": "44100.0000",
+      "outstanding": "37800.4375"
+    },
+    "dashboard_seconds": [
+      10.554,
+      10.119,
+      9.8
+    ],
+    "dashboard_payload_bytes": [
+      45888,
+      45888,
+      45887
+    ],
+    "exports": {
+      "rows.csv": {
+        "seconds": 3.096,
+        "bytes": 30401439
+      },
+      "rows.xlsx": {
+        "seconds": 10.075,
+        "bytes": 4828948
+      },
+      "summary.csv": {
+        "seconds": 2.955,
+        "bytes": 20791
+      },
+      "summary.xlsx": {
+        "seconds": 2.997,
+        "bytes": 11447
+      }
+    },
+    "warm_dashboard_seconds": [
+      3.065,
+      3.023,
+      3.016
+    ],
+    "database": {
+      "database_bytes": 68277939,
+      "wal_disk_bytes": 83886080,
+      "wal_lsn": "0/5DFFF00",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 27246592,
+          "heap_bytes": 21848064,
+          "index_bytes": 5357568,
+          "toast_and_aux_bytes": 40960
+        },
+        "audit": {
+          "total_bytes": 20275200,
+          "heap_bytes": 19677184,
+          "index_bytes": 557056,
+          "toast_and_aux_bytes": 40960
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        },
+        "decision_documents": {
+          "total_bytes": 466944,
+          "heap_bytes": 172032,
+          "index_bytes": 262144,
+          "toast_and_aux_bytes": 32768
+        },
+        "decision_versions": {
+          "total_bytes": 638976,
+          "heap_bytes": 286720,
+          "index_bytes": 319488,
+          "toast_and_aux_bytes": 32768
+        },
+        "decision_entries": {
+          "total_bytes": 11091968,
+          "heap_bytes": 4800512,
+          "index_bytes": 6250496,
+          "toast_and_aux_bytes": 40960
+        },
+        "decision_retirements": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 24001,
+        "imports": 2,
+        "audit": 24036
+      }
+    },
+    "independent_restore": {
+      "verified": true,
+      "restore_seconds": 1.859,
+      "backup": {
+        "seconds": 1.562,
+        "bytes": 43616579,
+        "sha256": "34e4f53ad5b34c4ec8307002b4ed9c28d4dc01c07ec532ae9a79bb3ccf39ef7d",
+        "tables": {
+          "users": {
+            "count": 3,
+            "sha256": "4c034fca45761f502c8fd1000c1a907dab7ebb5441aba8299f3267139e760691"
+          },
+          "user_sites": {
+            "count": 13,
+            "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+          },
+          "records": {
+            "count": 34,
+            "sha256": "9edb8cf15ee2ad97fc9009932a0033fb0ad9aa0bcd39b96ac88b851ac4623a2c"
+          },
+          "audit": {
+            "count": 24036,
+            "sha256": "3fc4242f69f9133cd648f9782c197b36b5417a1d026ddab50c85f579eebc8f47"
+          },
+          "mutations": {
+            "count": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "media": {
+            "count": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "imports": {
+            "count": 2,
+            "sha256": "3ab9ddaee95bb863f242c61aca50a29f1af53b215f1a259f4d85ba1849475313"
+          },
+          "decision_records": {
+            "count": 24001,
+            "sha256": "97fe22fab2e59dbeab69a2b1028be0dfcd0e28a7d5dea44f38a3fd135b67c28f"
+          },
+          "decision_documents": {
+            "count": 720,
+            "sha256": "abe64855ef6bc9d3e6277e585768f7652c286cd9bfaa2f423b23ab8abff712e3"
+          },
+          "decision_versions": {
+            "count": 721,
+            "sha256": "af88b9625f8740dc8f42933e3c22b02edd9abf772863d6b14fd251afe935a17f"
+          },
+          "decision_entries": {
+            "count": 24001,
+            "sha256": "ecc1335c90dde1141a4b4a4f4f517dbf805848a52f7274bf2aa22415caf99003"
+          },
+          "decision_retirements": {
+            "count": 1,
+            "sha256": "8ab7608815127b80b2385b7739a1d6082b485ac784b9a5e79e68c90a89c4d3f9"
+          }
+        }
+      },
+      "same_analytics_snapshot": true
+    },
+    "health": {
+      "source": {
+        "fixture": {
+          "samples": 49,
+          "failures": 0,
+          "max_seconds": 0.064
+        },
+        "correction": {
+          "samples": 12,
+          "failures": 0,
+          "max_seconds": 0.083
+        },
+        "dashboard": {
+          "samples": 104,
+          "failures": 0,
+          "max_seconds": 0.088
+        },
+        "concurrent": {
+          "samples": 9,
+          "failures": 0,
+          "max_seconds": 0.102
+        },
+        "exports": {
+          "samples": 63,
+          "failures": 0,
+          "max_seconds": 0.309
+        },
+        "warm-dashboard": {
+          "samples": 18,
+          "failures": 0,
+          "max_seconds": 0.062
+        },
+        "backup": {
+          "samples": 22,
+          "failures": 0,
+          "max_seconds": 0.07
+        }
+      },
+      "restored": {
+        "restored-analytics": {
+          "samples": 11,
+          "failures": 0,
+          "max_seconds": 0.048
+        }
+      }
+    },
+    "verified": true,
+    "resources": {
+      "phases": {
+        "setup": {
+          "anon_peak_bytes": 137633792,
+          "file_cache_peak_bytes": 258048,
+          "total_peak_bytes": 139976704,
+          "disk_peak_bytes": 229757,
+          "staging_disk_peak_bytes": 0,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:fixture": {
+          "anon_peak_bytes": 187547648,
+          "file_cache_peak_bytes": 262144,
+          "total_peak_bytes": 190234624,
+          "disk_peak_bytes": 232795,
+          "staging_disk_peak_bytes": 0,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:correction": {
+          "anon_peak_bytes": 230363136,
+          "file_cache_peak_bytes": 385024,
+          "total_peak_bytes": 233594880,
+          "disk_peak_bytes": 332934,
+          "staging_disk_peak_bytes": 91812,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:dashboard": {
+          "anon_peak_bytes": 191238144,
+          "file_cache_peak_bytes": 303104,
+          "total_peak_bytes": 194195456,
+          "disk_peak_bytes": 253092,
+          "staging_disk_peak_bytes": 4590,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:concurrent": {
+          "anon_peak_bytes": 192446464,
+          "file_cache_peak_bytes": 303104,
+          "total_peak_bytes": 195264512,
+          "disk_peak_bytes": 253877,
+          "staging_disk_peak_bytes": 4590,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:exports": {
+          "anon_peak_bytes": 351875072,
+          "file_cache_peak_bytes": 61542400,
+          "total_peak_bytes": 359858176,
+          "disk_peak_bytes": 61492575,
+          "staging_disk_peak_bytes": 61241483,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:warm-dashboard": {
+          "anon_peak_bytes": 323649536,
+          "file_cache_peak_bytes": 311296,
+          "total_peak_bytes": 326868992,
+          "disk_peak_bytes": 259927,
+          "staging_disk_peak_bytes": 4590,
+          "backup_disk_peak_bytes": 0
+        },
+        "source:backup": {
+          "anon_peak_bytes": 376012800,
+          "file_cache_peak_bytes": 87552000,
+          "total_peak_bytes": 424431616,
+          "disk_peak_bytes": 87491953,
+          "staging_disk_peak_bytes": 4590,
+          "backup_disk_peak_bytes": 43614944
+        },
+        "restored:restored-analytics": {
+          "anon_peak_bytes": 395624448,
+          "file_cache_peak_bytes": 43937792,
+          "total_peak_bytes": 444399616,
+          "disk_peak_bytes": 43879379,
+          "staging_disk_peak_bytes": 4590,
+          "backup_disk_peak_bytes": 0
+        }
+      },
+      "elapsed_seconds": 148.982,
+      "cpu_usage_seconds": 33.351,
+      "cpu_throttled_seconds": 20.645,
+      "cpu_limit": "50000 100000",
+      "memory_limit": "1073741824",
+      "kernel_total_peak_bytes": 444481536,
+      "oom_kills": 0
+    }
+  },
+  "postgresql_resources": {
+    "source": {
+      "total_peak_bytes": 355966976,
+      "anon_peak_bytes": 45510656,
+      "file_cache_peak_bytes": 304885760,
+      "disk_peak_bytes": 222250085,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 53.59,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 51.021
+    },
+    "restored": {
+      "total_peak_bytes": 240238592,
+      "anon_peak_bytes": 16490496,
+      "file_cache_peak_bytes": 214495232,
+      "disk_peak_bytes": 180629267,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 6.208,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 4.043
+    }
+  },
+  "container": {
+    "Status": "exited",
+    "OOMKilled": false,
+    "ExitCode": 0
+  }
+}
