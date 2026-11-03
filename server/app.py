@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from starlette.background import BackgroundTask
 from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .database import Database, ROOT, digest, password_hash, password_valid, now
+from .database import Database, ROOT, digest, password_hash, password_valid, now, is_postgres
 from .imports import parse_import, commit_import
 from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview
 from .reports import build_report, export
@@ -37,7 +37,7 @@ def create_app(path=None, origin=None, secure=None):
     if not public_origin.startswith('https://') and urlparse(public_origin).hostname not in ('localhost','127.0.0.1','testserver'):
         raise ValueError('Внешний адрес требует HTTPS')
     database_path=path or ('postgresql' if os.getenv('KSU_DATABASE_URL') else None) or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3'))
-    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1' and str(database_path)!='postgresql' and not str(database_path).startswith(('postgresql://','postgres://')):
+    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1' and not is_postgres(database_path):
         # A missing data mount must never silently create a fresh, empty production database.
         from .maintenance import validate_database
         validate_database(database_path)
@@ -359,7 +359,7 @@ def create_app(path=None, origin=None, secure=None):
             writer.writerow(list(FIELDS.values())+['Лист-источник','Строка Excel'])
             yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
             with db.connect(actor) as con:
-                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by d.import_hash,d.sheet,d.source_row,d.id',params):
+                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by '+db.decision_order+',d.sheet,d.source_row,d.id',params):
                     item=json.loads(row['data'])
                     writer.writerow([safe_cell(item.get(k) or '') for k in FIELDS]+[safe_cell(row['sheet']),row['source_row']])
                     yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
@@ -373,7 +373,7 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect(actor) as con:
             con.execute('begin')
             count=con.execute('select count(*) from decision_records d where '+clause,params).fetchone()[0]
-            rows=con.execute('select d.* from decision_records d where '+clause+' order by (select created_at from imports where hash=d.import_hash) desc,d.source_row desc,d.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
+            rows=con.execute('select d.* from decision_records d where '+clause+' order by '+db.decision_order+' desc,d.source_row desc,d.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
         return {'page':page,'limit':limit,'total':count,'rows':[{'id':r['id'],'sourceRow':r['source_row'],'sheet':r['sheet'],
                  **{k:v for k,v in json.loads(r['data']).items() if k not in ('sourceCells','unmappedCells')}} for r in rows]}
 

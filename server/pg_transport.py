@@ -5,6 +5,7 @@ from psycopg.conninfo import conninfo_to_dict
 
 def validate_transport(dsn):
     info=conninfo_to_dict(dsn)
+    if not info.get('user') or not info.get('dbname') or not (info.get('host') or info.get('hostaddr')):raise ValueError('Explicit PostgreSQL host, database and user are required')
     if info.get('service') or os.getenv('PGSERVICE'):raise ValueError('Explicit connection parameters required; service profiles are not supported')
     if '=' in info.get('dbname','') or info.get('dbname','').startswith(('postgres://','postgresql://')):raise ValueError('Database name must not contain nested connection settings')
     host=info.get('host') or info.get('hostaddr') or os.getenv('PGHOST','')

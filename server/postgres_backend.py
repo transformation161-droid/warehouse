@@ -40,6 +40,7 @@ class Connection:
 
 class PostgresDatabase:
     backend='postgresql'
+    decision_order='import_created_at(d.import_hash)'
     user=Database.user
     snapshot=Database.snapshot
 

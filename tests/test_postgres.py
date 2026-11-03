@@ -101,6 +101,11 @@ class PostgreSQL(unittest.TestCase):
             self.assertEqual(response.status_code,507)
         self.assertEqual(self.state()['revision'],before)
         self.assertEqual(self.state()['visits'],[])
+        batch={'mutationId':'DEMO-idempotent-at-cap','changes':[{'collection':'visits','id':'DEMO-applied','expectedVersion':0,'data':{'siteId':'s1','date':'2026-11-04'}}]}
+        self.assertEqual(self.inspector.post('/api/changes',json=batch).status_code,200)
+        with patch.dict(os.environ,{'KSU_PG_DATABASE_MAX_BYTES':'1'}):
+            self.assertEqual(self.inspector.post('/api/changes',json=batch).status_code,200)
+        self.assertEqual(len(self.state()['visits']),1)
         with self.assertRaises(ValueError):Database(self.admin)
         with self.app.state.db.connect() as con:
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):con.execute('set role postgres')
@@ -117,6 +122,12 @@ class PostgreSQL(unittest.TestCase):
         with self.app.state.db.connect(self.app.state.db.user('inspector')) as con:
             self.assertEqual(con.execute('select count(*) from imports').fetchone()[0],0)
         self.assertEqual(self.inspector.get('/api/history?collection=decisions&record_id='+row['id']).json(),[])
+        # Shared rows sort chronologically without granting access to another actor's raw file.
+        second=self.book([self.row(sourceId='DEMO-2')]);ident=self.upload(second,self.manager)
+        self.manager.post('/api/decision-imports/'+ident+'/preview',json={});self.wait(ident,self.manager)
+        self.manager.post('/api/decision-imports/'+ident+'/commit');self.assertEqual(self.wait(ident,self.manager)['status'],'done')
+        third=self.book([self.row(sourceId='DEMO-3')]);ident=self.upload(third);self.preview(ident);self.assertEqual(self.commit(ident)['status'],'done')
+        self.assertEqual([r['sourceId'] for r in self.inspector.get('/api/decisions').json()['rows']],['DEMO-3','DEMO-2','DEMO-1'])
 
     def test_poll_revision_and_private_history_are_independent(self):
         before=self.state(self.inspector)['revision']

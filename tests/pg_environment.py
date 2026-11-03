@@ -80,6 +80,42 @@ def test_environment(cluster,container=False):
             'KSU_TEST_PG_RESTORE_RUNTIME_DSN':cluster['restored'][prefix+'runtime']}
 
 
+def packaged_cli(cluster,image,output):
+    """Exercise the actual image modules used by the Windows offline scripts."""
+    from server.database import Database,seed_demo
+    name='ksu_cli_'+uuid4().hex;role='ksu_cli_role_'+uuid4().hex
+    password=secrets.token_urlsafe(24);login_password=secrets.token_urlsafe(24)
+    live=cluster['private']/'cli-live.sqlite3';seed_demo(Database(live),login_password,secrets.token_urlsafe(24))
+    source=cluster['private']/'cli-source.sqlite3'
+    from server.maintenance import snapshot_database
+    import sqlite3
+    snapshot_database(live,source)
+    # A prepared standalone snapshot, not a hidden-WAL main-file mount.
+    with sqlite3.connect(source) as con:con.execute('pragma journal_mode=delete')
+    work=cluster['private']/'cli-work';work.mkdir()
+    host_admin=make_conninfo(**{**conninfo_to_dict(cluster['source']['admin']),'dbname':name})
+    admin=make_conninfo(**{**conninfo_to_dict(cluster['source']['container_admin']),'dbname':name})
+    runtime=make_conninfo(**{**conninfo_to_dict(admin),'user':role,'password':password})
+    values={'KSU_PG_ADMIN_DSN':admin,'KSU_PG_RUNTIME_PASSWORD':password,'KSU_DATABASE_URL':runtime,
+        'KSU_WORK_DIR':'/work/staging','KSU_PG_MIGRATION_DIR':'/work','KSU_ORIGIN':'http://testserver',
+        'KSU_SECURE_COOKIES':'0','KSU_REQUIRE_INITIALIZED':'1','KSU_TEST_LOGIN_PASSWORD':login_password}
+    envfile=cluster['private']/'cli.env';envfile.write_text(''.join(k+'='+v+'\n' for k,v in values.items()));envfile.chmod(0o600)
+    args=['run','--rm','--network',cluster['network'],'--user',str(os.getuid())+':'+str(os.getgid()),
+        '--env-file',str(envfile),'-v',str(work)+':/work:rw','-v',str(source)+':/input/source.sqlite3:ro',
+        '-v',str(cluster['pki']/'cert.pem')+':/certs/cert.pem:ro','--entrypoint','python',image]
+    with psycopg.connect(cluster['source']['admin'],autocommit=True) as con:con.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+    try:
+        with (output/'packaged-cli.txt').open('w') as log:
+            for command in (['provision-roles','--runtime-role',role],['init','--runtime-role',role],['migrate-sqlite','/input/source.sqlite3']):
+                docker(*args,'-m','server.pg_admin',*command,stdout=log,stderr=log)
+            probe="import os; from fastapi.testclient import TestClient; from server.app import create_app; app=create_app(); c=TestClient(app,headers={'Origin':'http://testserver'}); r=c.post('/api/login',json={'username':'manager','password':os.environ['KSU_TEST_LOGIN_PASSWORD']}); assert r.status_code==200; assert app.state.db.backend=='postgresql'; print('PASS: packaged CLI provisioning/migration and restricted PostgreSQL login')"
+            docker(*args,'-c',probe,stdout=log,stderr=log)
+    finally:
+        with psycopg.connect(cluster['source']['admin'],autocommit=True) as con:
+            con.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+            con.execute(sql.SQL('DROP ROLE IF EXISTS {}').format(sql.Identifier(role)))
+
+
 def main():
     import argparse
     import sys
@@ -90,6 +126,7 @@ def main():
             env=test_environment(cluster)
             with (output/'postgres-tests.txt').open('w') as log:
                 subprocess.run([sys.executable,'-m','unittest','tests.test_postgres','-v'],env=env,stdout=log,stderr=log,check=True)
+            packaged_cli(cluster,args.image,output)
             for script in ('smoke_test.py','v11_flow_test.py','visits_flow_test.py','decisions_flow_test.py','calendar_flow_test.py'):
                 name='ksu_browser_'+uuid4().hex
                 admin=make_conninfo(**{**conninfo_to_dict(cluster['source']['admin']),'dbname':name})

@@ -165,12 +165,18 @@ commit;
 """
 
 
+def is_postgres(value):
+    value=str(value)
+    return value=='postgresql' or value.startswith(('postgresql://','postgres://')) or bool(re.match(r'\w+=',value))
+
+
 class Database:
     backend='sqlite'
+    decision_order='(select created_at from imports where hash=d.import_hash)'
 
     def __new__(cls,path):
         value=str(path)
-        if value=='postgresql' or value.startswith(('postgresql://','postgres://')) or re.match(r'\w+=',value):
+        if is_postgres(value):
             from .postgres_backend import PostgresDatabase
             dsn=os.environ.get('KSU_DATABASE_URL') if value=='postgresql' else value
             if not dsn:raise ValueError('KSU_DATABASE_URL is required')

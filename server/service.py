@@ -26,12 +26,13 @@ def apply_changes(db, actor, batch):
     try:
         with db.connect(actor) as con:
             con.execute('begin immediate')
-            if db.backend=='postgresql':db.check_capacity(con)
             previous = con.execute('select body_hash from mutations where user_id=? and id=?', (actor['id'],batch.mutationId)).fetchone()
             if previous:
                 if previous[0] != body_hash:
                     fail('Идентификатор запроса уже использован с другим содержимым',409)
                 return db.snapshot(con, actor)
+            if db.backend=='postgresql':
+                db.check_capacity(con,len(batch.model_dump_json().encode())*4+len(batch.changes)*16384+65536)
             seen = set()
             for change in batch.changes:
                 key = (change.collection, change.id)

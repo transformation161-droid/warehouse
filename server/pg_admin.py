@@ -49,7 +49,7 @@ def grant_runtime(connection,role):
     connection.execute(sql.SQL('GRANT INSERT,UPDATE ON ksu.records TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT ON ksu.media,ksu.imports,ksu.decision_records,ksu.mutations TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT,UPDATE,DELETE ON ksu.sessions,ksu.attempts TO {}').format(ident))
-    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()'):
+    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)'):
         connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
 
 

@@ -26,7 +26,7 @@ def tool_environment(dsn):
         raise BackupError('Remote PostgreSQL requires sslmode=verify-full')
     names={'host':'PGHOST','hostaddr':'PGHOSTADDR','port':'PGPORT','user':'PGUSER','password':'PGPASSWORD','dbname':'PGDATABASE',
            'sslmode':'PGSSLMODE','sslrootcert':'PGSSLROOTCERT','sslcert':'PGSSLCERT','sslkey':'PGSSLKEY'}
-    env={key:value for key,value in os.environ.items() if not key.startswith('PG')}
+    env=dict(os.environ)  # Preserve injected password/passfile/CA bindings; explicit DSN wins.
     env.update({names[key]:value for key,value in info.items() if key in names});return env
 
 

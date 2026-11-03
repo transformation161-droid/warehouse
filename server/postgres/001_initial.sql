@@ -127,6 +127,9 @@ CREATE POLICY imports_insert ON imports FOR INSERT WITH CHECK(actor_id=ksu.actor
 CREATE FUNCTION import_exists(signature text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=ksu,pg_catalog AS $$ SELECT EXISTS(SELECT 1 FROM imports WHERE hash=signature) $$;
 CREATE FUNCTION import_styles(signature text) RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path=ksu,pg_catalog AS $$
  SELECT jsonb_build_object('styles',raw_json::jsonb->'styles')::text FROM imports WHERE hash=signature AND EXISTS(SELECT 1 FROM decision_records d WHERE d.import_hash=signature AND accessible(d.site_id)) $$;
+CREATE FUNCTION import_created_at(signature text) RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path=ksu,pg_catalog AS $$
+ SELECT created_at FROM imports WHERE hash=signature AND (actor_role()='manager' OR actor_id=ksu.actor_id() OR
+ EXISTS(SELECT 1 FROM decision_records d WHERE d.import_hash=signature AND accessible(d.site_id))) $$;
 -- A shared plan may change without granting access to a foreign author's audit payload.
 CREATE FUNCTION state_revision() RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path=ksu,pg_catalog AS $$
  SELECT coalesce(max(a.seq),0) FROM audit a WHERE actor_role()='manager' OR
