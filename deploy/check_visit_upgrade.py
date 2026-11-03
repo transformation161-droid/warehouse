@@ -82,9 +82,13 @@ def run(previous_ref='3e3771ec0dd93eba5cc16d83cb477002273315a4'):
         baseline=fingerprint(source)
         with closing(sqlite3.connect(source)) as src,closing(sqlite3.connect(target)) as dest:src.backup(dest)
         app=create_app(target,'http://testserver',False)
-        assert fingerprint(target)==baseline
+        upgraded=fingerprint(target)
+        assert {k:upgraded[k] for k in baseline}==baseline
+        assert upgraded['decision_records']['count']==0
         Database(target)
-        assert fingerprint(target)==baseline
+        upgraded=fingerprint(target)
+        assert {k:upgraded[k] for k in baseline}==baseline
+        assert upgraded['decision_records']['count']==0
         for role in ('manager','inspector'):
             with TestClient(app,headers={'Origin':'http://testserver'}) as client:
                 response=client.post('/api/login',json={'username':role,'password':passwords[role]});assert response.status_code==200

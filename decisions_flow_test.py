@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright, expect
 from server.database import Database, ROOT, seed_demo
 from server.decision_import import FIELDS
 from tests.test_api import MANAGER_PASSWORD, INSPECTOR_PASSWORD
-from tests.browser import login, nav
+from tests.browser import login, nav, saved
 
 
 def run():
@@ -47,6 +47,12 @@ def run():
                     m=manager.new_page();i=inspector.new_page();errors=[]
                     for page in (m,i):page.on('pageerror',lambda error:errors.append(str(error)))
                     login(i,origin,'inspector',INSPECTOR_PASSWORD);login(m,origin,'manager',MANAGER_PASSWORD)
+                    # Both PRs run in the same database and browser sessions.
+                    nav(i,'schedule')
+                    i.locator('[data-action="add-visit"]').click()
+                    i.locator('#visit-form [name="goal"]').fill('ДЕМО · Выезд перед импортом')
+                    i.locator('[data-action="save-visit"]').click();saved(i)
+                    visit=i.evaluate('db.visits.find(v=>v.goal==="ДЕМО · Выезд перед импортом").id')
                     nav(i,'decisions')
                     i.locator('[data-action="decision-import"]').click()
                     i.locator('#decision-file').set_input_files({'name':'DEMO.xlsx','mimeType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','buffer':out.getvalue()})
@@ -96,9 +102,19 @@ def run():
                     expect(i.locator('#decision-progress')).to_contain_text('Проверка пройдена',timeout=15000)
                     i.locator('[data-action="decision-commit"]').click()
                     expect(i.locator('#decision-progress')).to_contain_text('дубли не созданы',timeout=15000)
+                    i.get_by_role('button',name='Закрыть',exact=True).first.click()
+                    nav(i,'schedule');nav(m,'schedule')
+                    row=i.locator(f'[data-visit-id="{visit}"]')
+                    row.locator('[data-action="cancel-visit"]').click()
+                    i.locator('#cancel-visit-form textarea').fill('ДЕМО · Проверка после импорта')
+                    i.locator('[data-action="save-cancel-visit"]').click();saved(i)
+                    expect(m.locator(f'[data-visit-id="{visit}"]')).to_contain_text('ДЕМО · Проверка после импорта',timeout=8000)
+                    m.locator(f'[data-visit-id="{visit}"] [data-action="history"]').click()
+                    expect(m.locator('.timeline-item')).to_have_count(2)
+                    expect(m.locator('.timeline-item').first).to_contain_text('ДЕМО · Эльман')
                     assert not errors,errors
                     browser.close()
-                print('PASS: mobile streamed import, mapping/preview, dialog resume, exact separate amounts, manager view/history/CSV, escaped source text and repeat without duplicates')
+                print('PASS: combined visits/import and separate audit; mobile streamed import, mapping/preview, dialog resume, exact separate amounts, manager view/history/CSV, escaped source text and repeat without duplicates')
             except Exception:
                 log.flush();log.seek(0);print(log.read()[-4000:]);raise
             finally:

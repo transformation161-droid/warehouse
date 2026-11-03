@@ -184,7 +184,7 @@ def create_app(path=None, origin=None, secure=None):
     def history(request:Request, collection:str='', record_id:str='', before:int=2**63-1):
         actor=auth(request)
         with db.connect(actor) as con:
-            records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id from records union all select 'decisions',id,author_id,site_id from decision_records) r on r.collection=a.collection and r.id=a.record_id
+            records=con.execute('''select a.* from audit a join (select collection,id,author_id,site_id,data from records union all select 'decisions',id,author_id,site_id,data from decision_records) r on r.collection=a.collection and r.id=a.record_id
                 where a.seq<? and (?='' or a.collection=?) and (?='' or a.record_id=?)
                 and (?='manager' or ((r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
                 and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
