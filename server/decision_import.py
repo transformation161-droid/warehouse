@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import sqlite3
+import psycopg
 import subprocess
 import sys
 import threading
@@ -210,7 +211,7 @@ def commit(folder, db):
         con.execute('begin immediate')
         current=con.execute('select role,active from users where id=?',(actor['id'],)).fetchone()
         if not current or not current['active'] or current['role']!=actor['role']:raise Rejected('Учётная запись изменилась после предпросмотра')
-        existing=con.execute('select actor_id from imports where hash=?',(meta['signature'],)).fetchone()
+        existing=db.import_exists(con,meta['signature'])
         # Always recheck current object rights, including before returning duplicate.
         for (site,) in stage.execute('select distinct site_id from rows'):
             if not accessible(con,actor,site) or not con.execute("select 1 from records where collection='sites' and id=?",(site,)).fetchone():
@@ -218,9 +219,10 @@ def commit(folder, db):
         if existing:
             meta.update(status='done',duplicate=True,committed=0)
         else:
-            maximum=int(os.getenv('KSU_DB_MAX_BYTES','0'))
-            used=con.execute('pragma page_count').fetchone()[0]*con.execute('pragma page_size').fetchone()[0]
+            maximum=int(os.getenv('KSU_DB_MAX_BYTES','0')) if db.backend=='sqlite' else 0
+            used=con.execute('pragma page_count').fetchone()[0]*con.execute('pragma page_size').fetchone()[0] if db.backend=='sqlite' else 0
             estimate=meta['normalizedBytes']*3+meta['accepted']*192+2*1024*1024
+            if db.backend=='postgresql':db.check_capacity(con,estimate)
             if maximum and used+estimate>maximum:
                 raise Rejected('Недостаточно запаса в лимите SQLite для всего импорта; уменьшите диапазон или согласуйте перенос хранения')
             data={k:meta[k] for k in ('sha256','name','signature','settings','mapping','processed','accepted','rejected','skipped','formulaCells','styles','date1904')}
@@ -228,10 +230,13 @@ def commit(folder, db):
             sheet=meta['sheets'][meta['settings']['sheet']]['name']
             for number,site,encoded in stage.execute('select number,site_id,data from rows order by number'):
                 # Main transaction is never committed in batches: any error rolls back rows, header and audit.
+                if con.execute('select 1 from decision_records where file_sha=? and sheet=? and source_row=?',(meta['sha256'],sheet,number)).fetchone():
+                    raise CellError(number,'','Исходная строка уже импортирована','Выберите непересекающийся диапазон; новая запись целиком отменена')
                 try:
                     con.execute('insert into decision_records values(?,?,?,?,?,?,?,?)',
                         (uuid4().hex,meta['signature'],meta['sha256'],sheet,number,site,actor['id'],encoded))
-                except sqlite3.IntegrityError:
+                except (sqlite3.IntegrityError,psycopg.IntegrityError):
+                    if db.backend=='postgresql':raise
                     if con.execute('select 1 from decision_records where file_sha=? and sheet=? and source_row=?',(meta['sha256'],sheet,number)).fetchone():
                         raise CellError(number,'','Исходная строка уже импортирована','Выберите непересекающийся диапазон; новая запись целиком отменена')
                     raise
@@ -271,7 +276,7 @@ def worker_main(folder, action):
             meta['errors']=[{'row':error.row,'column':error.column,'reason':error.reason,'fix':error.fix}]
         if isinstance(error,(Rejected,StorageFull)):message=str(error)
         elif isinstance(error,sqlite3.OperationalError) and 'full' in str(error).lower():message='Достигнут лимит SQLite или диска; импорт полностью отменён'
-        elif isinstance(error,sqlite3.IntegrityError):message='Часть исходных строк уже импортирована или данные не проходят правила базы; запись отменена'
+        elif isinstance(error,(sqlite3.IntegrityError,psycopg.IntegrityError)):message='Часть исходных строк уже импортирована или данные не проходят правила базы; запись отменена'
         elif isinstance(error,(zipfile.BadZipFile,ParseError,DefusedXmlException,KeyError)):message='Повреждённая или небезопасная структура XLSX. Откройте и пересохраните книгу в Excel'
         elif isinstance(error,MemoryError):message='Превышен лимит памяти обработчика; уменьшите выбранный диапазон'
         else:message='Не удалось обработать книгу: '+type(error).__name__
@@ -340,7 +345,7 @@ class Jobs:
                     except (OSError,ValueError,KeyError):pass
             for _,expired in sorted(retained)[:-31]:shutil.rmtree(expired)
             ident=uuid4().hex;folder=self.root/ident;folder.mkdir(mode=0o700)
-            write_meta(folder,{'id':ident,'database':str(self.db.path.resolve()),'actor':actor['id'],'name':name,
+            write_meta(folder,{'id':ident,'database':getattr(self.db,'locator',str(self.db.path.resolve())),'actor':actor['id'],'name':name,
                                'created':time.time(),'status':'uploading'})
             self.active=ident
             return folder
@@ -397,8 +402,8 @@ class Jobs:
     def reconcile(self, meta, cancel=False):
         signature=meta.get('signature')
         if signature:
-            with self.db.connect() as con:
-                imported=con.execute('select 1 from imports where hash=?',(signature,)).fetchone()
+            with self.db.connect(actor_for(self.db,meta['actor'])) as con:
+                imported=self.db.import_exists(con,signature)
                 count=con.execute('select count(*) from decision_records where import_hash=?',(signature,)).fetchone()[0]
             if imported:
                 meta.update(status='done',committed=count,warning='Завершённая транзакция подтверждена по журналу импорта')

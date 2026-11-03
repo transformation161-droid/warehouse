@@ -1,3 +1,4 @@
+from tests.pg_environment import prepare_browser_database
 """Issue #11 browser acceptance: two sessions and synthetic data, no cloud APIs."""
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ def run():
     with tempfile.TemporaryDirectory(prefix='ksu-visit-ui-') as folder:
         path=Path(folder)/'synthetic.sqlite3'
         seed_demo(Database(path),MANAGER_PASSWORD,INSPECTOR_PASSWORD)
+        prepare_browser_database(path)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         origin=f'http://localhost:{port}'

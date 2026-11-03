@@ -1,0 +1,50 @@
+name: PostgreSQL migration and independent restore
+on:
+  pull_request:
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Build local PostgreSQL tools image, no data or credentials
+        run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
+      - name: Real PostgreSQL contracts, five browsers, large independent recovery
+        run: python -m tests.pg_environment --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-checks"
+      - name: Publish only logs and aggregate synthetic metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-acceptance
+          path: |
+            var/postgres-checks/*.txt
+            var/postgres-checks/postgres-backup-metrics.json
+            /tmp/ksu_calendar_*.png
+          retention-days: 7
+  windows-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate portable restore script syntax
+        shell: pwsh
+        run: |
+          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1')) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          }

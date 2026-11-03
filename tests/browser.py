@@ -1,3 +1,4 @@
+from .pg_environment import prepare_browser_database
 """Real HTTP and cookies, independent desktop/mobile contexts; synthetic data only."""
 import io
 import os
@@ -39,6 +40,7 @@ def nav(page,name):
 def run(full=False):
     with tempfile.TemporaryDirectory(prefix='ksu-browser-') as tmp:
         db_path=Path(tmp)/'demo.sqlite3';seed_demo(Database(db_path),MANAGER_PASSWORD,INSPECTOR_PASSWORD)
+        prepare_browser_database(db_path)
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         origin=f'http://localhost:{port}'
         environment={**os.environ,'KSU_DB':str(db_path),'KSU_ORIGIN':origin,'KSU_SECURE_COOKIES':'0'}

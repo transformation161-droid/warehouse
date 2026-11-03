@@ -1,8 +1,9 @@
-"""SQLite is private to the server. Connection-bound identity also gates writes in SQL."""
+"""Database boundary: SQLite remains the default; PostgreSQL is explicitly selected."""
 import hashlib
 import json
 import os
 import secrets
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -164,7 +165,28 @@ commit;
 """
 
 
+def is_postgres(value):
+    value=str(value)
+    return value=='postgresql' or value.startswith(('postgresql://','postgres://')) or bool(re.match(r'\w+=',value))
+
+
 class Database:
+    backend='sqlite'
+    decision_order='(select created_at from imports where hash=d.import_hash)'
+
+    def __new__(cls,path):
+        value=str(path)
+        if is_postgres(value):
+            from .postgres_backend import PostgresDatabase
+            dsn=os.environ.get('KSU_DATABASE_URL') if value=='postgresql' else value
+            if not dsn:raise ValueError('KSU_DATABASE_URL is required')
+            return PostgresDatabase(dsn)
+        return super().__new__(cls)
+
+    def revision(self,con):return con.execute('select coalesce(max(seq),0) from audit').fetchone()[0]
+
+    def import_exists(self,con,signature):return bool(con.execute('select 1 from imports where hash=?',(signature,)).fetchone())
+    def import_metadata(self,con,signature):return con.execute('select raw_json from imports where hash=?',(signature,)).fetchone()[0]
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -224,7 +246,7 @@ class Database:
         ] if actor['role']=='manager' else []
         state['activities'] = []
         state['version'] = 2
-        state['revision'] = con.execute('select coalesce(max(seq),0) from audit').fetchone()[0]
+        state['revision'] = self.revision(con)
         return state
 
 

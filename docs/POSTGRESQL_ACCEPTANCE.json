@@ -1,0 +1,63 @@
+{
+  "synthetic_only": true,
+  "source_bytes": 168148992,
+  "downloaded_bytes": 335632695,
+  "migration_seconds": 5.234,
+  "restore_seconds": 3.652,
+  "download_seconds": 4.304,
+  "checksum_verified": true,
+  "source_unchanged": true,
+  "all_tables_match": true,
+  "independent_instance_restored": true,
+  "both_roles_photos_history_reports": true,
+  "duplicate_suppressed": true,
+  "inspector_csrf_origin_denied": true,
+  "interrupted_transfer_safe": true,
+  "deadline_no_partial": true,
+  "sessions_revoked": true,
+  "corrupt_and_nonempty_restore_rejected": true,
+  "quota_no_partial": true,
+  "inventory_report_checksums_match": true,
+  "xlsx_duplicate_after_restore": true,
+  "tables": {
+    "users": {
+      "count": 2,
+      "sha256": "3be153b1e7207a288aefb8efe9a0c073cbd03c0737094da61040e5788e919e02"
+    },
+    "user_sites": {
+      "count": 12,
+      "sha256": "4ee16044127636d423c8c73fa19ffdfd5b477787518dffd47a3b600296f40031"
+    },
+    "records": {
+      "count": 43,
+      "sha256": "a762d2437b40fd03c3523f56da9cb6c8a85be24a67df9f4641973d65d6f7439e"
+    },
+    "audit": {
+      "count": 46,
+      "sha256": "ced469e92a8d766992a573b9ac8375a0681ff3ef5787560676e3b27c45f73a1d"
+    },
+    "mutations": {
+      "count": 8,
+      "sha256": "e24c978f2f4b521395f0ae54550a4d00c7a1533c7c1a1aea966cfe3fa49d4d5f"
+    },
+    "media": {
+      "count": 161,
+      "sha256": "a1bdc0fae96e534605c9f2e33a947fde2cebb24da6e3afa5687c304d0d061e40"
+    },
+    "imports": {
+      "count": 2,
+      "sha256": "d5a7b711fae048c17aec2cd5ac8224fbc08e95793d35d3bfe6a4a6ee01e1e085"
+    },
+    "decision_records": {
+      "count": 1,
+      "sha256": "ca50f9583036abd41a9937f0c34d8aad763a55e28779e4fc17816c466a3776eb"
+    }
+  },
+  "memory_peak_bytes": 1075056640,
+  "cpu_limit": "50000 100000",
+  "memory_limit": "1073741824",
+  "whole_stack_one_cgroup": true,
+  "anonymous_memory_peak_bytes": 268251136,
+  "file_cache_peak_bytes": 920666112,
+  "oom_kills": 0
+}
