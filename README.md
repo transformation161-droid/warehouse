@@ -55,6 +55,9 @@ PDF требует шрифт DejaVu Sans на Linux: `/usr/share/fonts/truetype
 [Архитектура, проверки и rollback](docs/POSTGRESQL.md) · [Windows без Python](docs/POSTGRESQL_WINDOWS.md) ·
 [варианты размещения и смета](docs/POSTGRESQL_OPTIONS.md).
 
+Нагрузочная приёмка реестра (#20): [XLSX 18/30 МБ, накопление и независимое восстановление](docs/POSTGRESQL_LARGE_ACCEPTANCE.md) ·
+[годовая вместимость и варианты лимитов](docs/POSTGRESQL_CAPACITY.md). Лимиты автоматически не повышаются.
+
 ## Календарь выездов
 
 «План выездов» → «Календарь»: месяц, неделя или день, выбор даты, создание и перенос выезда,

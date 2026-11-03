@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import re
+from uuid import uuid4
 
 import psycopg
 from psycopg.rows import dict_row
@@ -27,15 +28,24 @@ class Cursor:
 
 class Connection:
     def __init__(self,connection):self.raw=connection
+    @staticmethod
+    def parameters(query):
+        pieces=re.split("('(?:''|[^'])*')",query)
+        return ''.join(piece.replace('%','%%').replace('?', '%s') if i%2==0 else piece.replace('%','%%') for i,piece in enumerate(pieces))
+
     def execute(self,query,params=()):
         if query.lower().strip()=='begin immediate':
             # Preserve SQLite's atomic write/version/idempotency contract across workers.
             return Cursor(self.raw.execute('select pg_advisory_xact_lock(170009)'))
         if query.lower().strip()=='begin':return Cursor(self.raw.execute('select 1'))
         # Static application SQL uses qmark parameters; never interpolate parameter values.
-        pieces=re.split("('(?:''|[^'])*')",query)
-        query=''.join(piece.replace('%','%%').replace('?', '%s') if i%2==0 else piece.replace('%','%%') for i,piece in enumerate(pieces))
-        return Cursor(self.raw.execute(query,params))
+        return Cursor(self.raw.execute(self.parameters(query),params))
+
+    def stream(self,query,params=()):
+        with self.raw.cursor(name="ksu_stream_"+uuid4().hex) as cursor:
+            cursor.itersize=64
+            cursor.execute(self.parameters(query),params)
+            for row in cursor:yield Row(row)
 
 
 class PostgresDatabase:
@@ -68,6 +78,8 @@ class PostgresDatabase:
             connection.execute("set local statement_timeout='120s'")
             connection.execute("set local lock_timeout='15s'")
             yield Connection(connection)
+
+    def iterate(self,con,query,params=()):return con.stream(query,params)
 
     def check_capacity(self,con,estimate=65536):
         maximum=int(os.getenv('KSU_PG_DATABASE_MAX_BYTES',os.getenv('KSU_DB_MAX_BYTES','268435456')))

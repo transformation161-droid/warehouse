@@ -1,7 +1,7 @@
 name: PostgreSQL migration and independent restore
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql]
 permissions:
   contents: read
 defaults:

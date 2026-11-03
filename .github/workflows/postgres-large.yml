@@ -1,0 +1,33 @@
+name: PostgreSQL large registry acceptance
+on:
+  pull_request:
+    branches: [main, feat/issue-9-postgresql]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  large-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
+      - name: Real 18/30 MB HTTP imports, accumulation, read/export and independent recovery
+        run: python -m experiments.postgres_large.run --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-large"
+      - name: Publish aggregates only; never workbooks, databases, dumps or environment files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-large-registry
+          path: |
+            var/postgres-large/postgres-large-*.json
+            var/postgres-large/postgres-large-log.txt
+          retention-days: 7

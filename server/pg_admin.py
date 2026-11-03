@@ -124,7 +124,7 @@ def main():
     init=sub.add_parser('init');init.add_argument('--runtime-role',required=True);init.add_argument('--backup-role')
     migrate=sub.add_parser('migrate-sqlite');migrate.add_argument('source')
     backup=sub.add_parser('backup');backup.add_argument('destination')
-    restore=sub.add_parser('restore');restore.add_argument('source');restore.add_argument('--runtime-role',required=True)
+    restore=sub.add_parser('restore');restore.add_argument('source');restore.add_argument('--runtime-role',required=True);restore.add_argument('--backup-role')
     args=parser.parse_args()
     try:
         dsn=os.environ['KSU_PG_ADMIN_DSN']
@@ -136,7 +136,7 @@ def main():
             result=backup_database(os.environ.get('KSU_PG_BACKUP_DSN',dsn),args.destination)
         else:
             from .pg_backup import restore_database
-            result=restore_database(args.source,dsn,args.runtime_role)
+            result=restore_database(args.source,dsn,args.runtime_role,args.backup_role)
         print(json.dumps(result,ensure_ascii=False,indent=2))
     except Exception as error:
         # Driver/tool errors can contain DSNs/passwords: never echo them from CLI.

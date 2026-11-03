@@ -183,6 +183,8 @@ class Database:
             return PostgresDatabase(dsn)
         return super().__new__(cls)
 
+    def iterate(self,con,query,params=()):return con.execute(query,params)
+
     def revision(self,con):return con.execute('select coalesce(max(seq),0) from audit').fetchone()[0]
 
     def import_exists(self,con,signature):return bool(con.execute('select 1 from imports where hash=?',(signature,)).fetchone())

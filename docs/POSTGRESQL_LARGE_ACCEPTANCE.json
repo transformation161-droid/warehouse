@@ -1,0 +1,1336 @@
+{
+  "synthetic_only": true,
+  "database_cap_bytes": 268435456,
+  "cap_raised": false,
+  "fixtures": {
+    "18": {
+      "synthetic_only": true,
+      "bytes": 18000000,
+      "rows": 11096,
+      "cells": 188632,
+      "shared_strings": false,
+      "digest": "706037b16b6686cc8236f49855354b1f90b2cbc7e37be971ff34c2654bf6f1bb",
+      "projection_digest": "fd3c4965125a837886d2cd663569ec6b61f89e82252630cd083a7dc9f41b398d",
+      "totals": {
+        "quantity": "44380",
+        "cost": "449347.5000",
+        "residual": "357813.7500",
+        "reimbursable": "45391.5000",
+        "reimbursed": "11095.0000"
+      },
+      "rich": true,
+      "variant": 1
+    },
+    "30": {
+      "synthetic_only": true,
+      "bytes": 30000000,
+      "rows": 18841,
+      "cells": 320297,
+      "shared_strings": true,
+      "digest": "c80a81f6eff5a14bb22a3aa1d3af198f0668fc57872ce281624fe2967e6aa781",
+      "projection_digest": "29c3b55f658c9cb22ebc5a134c8a06a3b29bc418472108bb95781196a675c6c9",
+      "totals": {
+        "quantity": "75360",
+        "cost": "763020.0000",
+        "residual": "607590.0000",
+        "reimbursable": "77076.0000",
+        "reimbursed": "18839.3750"
+      },
+      "rich": true,
+      "variant": 2
+    },
+    "18b": {
+      "synthetic_only": true,
+      "bytes": 18000000,
+      "rows": 11095,
+      "cells": 188615,
+      "shared_strings": false,
+      "digest": "5650705364e11cfc282d4c87981248becdc997efd4c0e85cd51d7fff64b62efa",
+      "projection_digest": "e767f4ec03a979beb6d29faeff4e583dd33c71b20295fb5ac29a83f2e277e5dd",
+      "totals": {
+        "quantity": "44378",
+        "cost": "449327.2500",
+        "residual": "357797.6250",
+        "reimbursable": "45389.2500",
+        "reimbursed": "11094.3750"
+      },
+      "rich": true,
+      "variant": 3
+    }
+  },
+  "18": {
+    "file_bytes": 18000000,
+    "expected_rows": 11095,
+    "upload_seconds": 1.469,
+    "preview_seconds": 4.851,
+    "normalized_bytes": 37480846,
+    "admission_estimate_bytes": 116669930,
+    "before": {
+      "database_bytes": 8328883,
+      "wal_disk_bytes": 16777216,
+      "wal_lsn": "0/1967418",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 32768,
+          "heap_bytes": 0,
+          "index_bytes": 24576,
+          "toast_and_aux_bytes": 8192
+        },
+        "audit": {
+          "total_bytes": 65536,
+          "heap_bytes": 16384,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 32768
+        },
+        "imports": {
+          "total_bytes": 16384,
+          "heap_bytes": 0,
+          "index_bytes": 8192,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 0,
+        "imports": 0,
+        "audit": 34
+      }
+    },
+    "commit_seconds": 9.84,
+    "outcome": "committed",
+    "after": {
+      "database_bytes": 107288243,
+      "wal_disk_bytes": 100663296,
+      "wal_lsn": "0/6FFB378",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 51150848,
+          "heap_bytes": 2760704,
+          "index_bytes": 2367488,
+          "toast_and_aux_bytes": 46022656
+        },
+        "audit": {
+          "total_bytes": 47874048,
+          "heap_bytes": 1581056,
+          "index_bytes": 270336,
+          "toast_and_aux_bytes": 46022656
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 11095,
+        "imports": 1,
+        "audit": 11129
+      }
+    },
+    "verification": {
+      "rows": 11095,
+      "all_fields_and_comments_match": true,
+      "leading_zero_ids_match": true,
+      "every_audit_present": true,
+      "digest": "fd3c4965125a837886d2cd663569ec6b61f89e82252630cd083a7dc9f41b398d",
+      "totals": {
+        "quantity": "44380",
+        "cost": "449347.5000",
+        "residual": "357813.7500",
+        "reimbursable": "45391.5000",
+        "reimbursed": "11095.0000"
+      }
+    },
+    "repeat_no_duplicate": true
+  },
+  "18_then_30": {
+    "file_bytes": 30000000,
+    "expected_rows": 18840,
+    "upload_seconds": 1.32,
+    "preview_seconds": 8.056,
+    "normalized_bytes": 63856629,
+    "admission_estimate_bytes": 197284319,
+    "before": {
+      "database_bytes": 107288243,
+      "wal_disk_bytes": 117440512,
+      "wal_lsn": "0/703D2E8",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 51150848,
+          "heap_bytes": 2760704,
+          "index_bytes": 2367488,
+          "toast_and_aux_bytes": 46022656
+        },
+        "audit": {
+          "total_bytes": 47874048,
+          "heap_bytes": 1581056,
+          "index_bytes": 270336,
+          "toast_and_aux_bytes": 46022656
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 11095,
+        "imports": 1,
+        "audit": 11129
+      }
+    },
+    "commit_seconds": 1.211,
+    "outcome": "cap_rejected",
+    "message": "PostgreSQL database cap reached; no automatic growth or paid action",
+    "rollback": true,
+    "after": {
+      "database_bytes": 107288243,
+      "wal_disk_bytes": 117440512,
+      "wal_lsn": "0/703D2E8",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 51150848,
+          "heap_bytes": 2760704,
+          "index_bytes": 2367488,
+          "toast_and_aux_bytes": 46022656
+        },
+        "audit": {
+          "total_bytes": 47874048,
+          "heap_bytes": 1581056,
+          "index_bytes": 270336,
+          "toast_and_aux_bytes": 46022656
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 11095,
+        "imports": 1,
+        "audit": 11129
+      }
+    }
+  },
+  "18_then_18b": {
+    "file_bytes": 18000000,
+    "expected_rows": 11094,
+    "upload_seconds": 1.27,
+    "preview_seconds": 4.849,
+    "normalized_bytes": 37688254,
+    "admission_estimate_bytes": 117291962,
+    "before": {
+      "database_bytes": 107288243,
+      "wal_disk_bytes": 117440512,
+      "wal_lsn": "0/703D2E8",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 51150848,
+          "heap_bytes": 2760704,
+          "index_bytes": 2367488,
+          "toast_and_aux_bytes": 46022656
+        },
+        "audit": {
+          "total_bytes": 47874048,
+          "heap_bytes": 1581056,
+          "index_bytes": 270336,
+          "toast_and_aux_bytes": 46022656
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 11095,
+        "imports": 1,
+        "audit": 11129
+      }
+    },
+    "commit_seconds": 10.232,
+    "outcome": "committed",
+    "after": {
+      "database_bytes": 206067379,
+      "wal_disk_bytes": 201326592,
+      "wal_lsn": "0/C735F98",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 102170624,
+          "heap_bytes": 5513216,
+          "index_bytes": 4685824,
+          "toast_and_aux_bytes": 91971584
+        },
+        "audit": {
+          "total_bytes": 95633408,
+          "heap_bytes": 3145728,
+          "index_bytes": 516096,
+          "toast_and_aux_bytes": 91971584
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 22189,
+        "imports": 2,
+        "audit": 22223
+      }
+    },
+    "verification": {
+      "rows": 11094,
+      "all_fields_and_comments_match": true,
+      "leading_zero_ids_match": true,
+      "every_audit_present": true,
+      "digest": "e767f4ec03a979beb6d29faeff4e583dd33c71b20295fb5ac29a83f2e277e5dd",
+      "totals": {
+        "quantity": "44378",
+        "cost": "449327.2500",
+        "residual": "357797.6250",
+        "reimbursable": "45389.2500",
+        "reimbursed": "11094.3750"
+      }
+    },
+    "repeat_no_duplicate": true
+  },
+  "18_18b_then_30": {
+    "file_bytes": 30000000,
+    "expected_rows": 18840,
+    "upload_seconds": 1.386,
+    "preview_seconds": 7.957,
+    "normalized_bytes": 63856629,
+    "admission_estimate_bytes": 197284319,
+    "before": {
+      "database_bytes": 206116531,
+      "wal_disk_bytes": 201326592,
+      "wal_lsn": "0/C8AF4A8",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 102187008,
+          "heap_bytes": 5513216,
+          "index_bytes": 4685824,
+          "toast_and_aux_bytes": 91987968
+        },
+        "audit": {
+          "total_bytes": 95649792,
+          "heap_bytes": 3145728,
+          "index_bytes": 516096,
+          "toast_and_aux_bytes": 91987968
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 22189,
+        "imports": 2,
+        "audit": 22223
+      }
+    },
+    "commit_seconds": 1.209,
+    "outcome": "cap_rejected",
+    "message": "PostgreSQL database cap reached; no automatic growth or paid action",
+    "rollback": true,
+    "after": {
+      "database_bytes": 206116531,
+      "wal_disk_bytes": 201326592,
+      "wal_lsn": "0/C8AF4E0",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 102187008,
+          "heap_bytes": 5513216,
+          "index_bytes": 4685824,
+          "toast_and_aux_bytes": 91987968
+        },
+        "audit": {
+          "total_bytes": 95649792,
+          "heap_bytes": 3145728,
+          "index_bytes": 516096,
+          "toast_and_aux_bytes": 91987968
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 22189,
+        "imports": 2,
+        "audit": 22223
+      }
+    }
+  },
+  "30": {
+    "file_bytes": 30000000,
+    "expected_rows": 18840,
+    "upload_seconds": 1.352,
+    "preview_seconds": 7.691,
+    "normalized_bytes": 63856629,
+    "admission_estimate_bytes": 197284319,
+    "before": {
+      "database_bytes": 8402611,
+      "wal_disk_bytes": 201326592,
+      "wal_lsn": "0/CD3B078",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 32768,
+          "heap_bytes": 0,
+          "index_bytes": 24576,
+          "toast_and_aux_bytes": 8192
+        },
+        "audit": {
+          "total_bytes": 65536,
+          "heap_bytes": 16384,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 32768
+        },
+        "imports": {
+          "total_bytes": 16384,
+          "heap_bytes": 0,
+          "index_bytes": 8192,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 0,
+        "imports": 0,
+        "audit": 34
+      }
+    },
+    "commit_seconds": 15.821,
+    "outcome": "committed",
+    "after": {
+      "database_bytes": 176182963,
+      "wal_disk_bytes": 369098752,
+      "wal_lsn": "0/16098F00",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 86638592,
+          "heap_bytes": 4677632,
+          "index_bytes": 3866624,
+          "toast_and_aux_bytes": 78094336
+        },
+        "audit": {
+          "total_bytes": 81207296,
+          "heap_bytes": 2670592,
+          "index_bytes": 442368,
+          "toast_and_aux_bytes": 78094336
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 18840,
+        "imports": 1,
+        "audit": 18874
+      }
+    },
+    "verification": {
+      "rows": 18840,
+      "all_fields_and_comments_match": true,
+      "leading_zero_ids_match": true,
+      "every_audit_present": true,
+      "digest": "29c3b55f658c9cb22ebc5a134c8a06a3b29bc418472108bb95781196a675c6c9",
+      "totals": {
+        "quantity": "75360",
+        "cost": "763020.0000",
+        "residual": "607590.0000",
+        "reimbursable": "77076.0000",
+        "reimbursed": "18839.3750"
+      }
+    },
+    "repeat_no_duplicate": true
+  },
+  "30_then_18": {
+    "file_bytes": 18000000,
+    "expected_rows": 11095,
+    "upload_seconds": 1.314,
+    "preview_seconds": 4.753,
+    "normalized_bytes": 37480846,
+    "admission_estimate_bytes": 116669930,
+    "before": {
+      "database_bytes": 176182963,
+      "wal_disk_bytes": 369098752,
+      "wal_lsn": "0/1609C818",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 86638592,
+          "heap_bytes": 4677632,
+          "index_bytes": 3866624,
+          "toast_and_aux_bytes": 78094336
+        },
+        "audit": {
+          "total_bytes": 81207296,
+          "heap_bytes": 2670592,
+          "index_bytes": 442368,
+          "toast_and_aux_bytes": 78094336
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 18840,
+        "imports": 1,
+        "audit": 18874
+      }
+    },
+    "commit_seconds": 1.223,
+    "outcome": "cap_rejected",
+    "message": "PostgreSQL database cap reached; no automatic growth or paid action",
+    "rollback": true,
+    "after": {
+      "database_bytes": 176182963,
+      "wal_disk_bytes": 369098752,
+      "wal_lsn": "0/1609C818",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 86638592,
+          "heap_bytes": 4677632,
+          "index_bytes": 3866624,
+          "toast_and_aux_bytes": 78094336
+        },
+        "audit": {
+          "total_bytes": 81207296,
+          "heap_bytes": 2670592,
+          "index_bytes": 442368,
+          "toast_and_aux_bytes": 78094336
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 18840,
+        "imports": 1,
+        "audit": 18874
+      }
+    }
+  },
+  "operational": {
+    "photo": "/api/media/6b162191091f738af5a2450b513f49daf8b1abded64307b1",
+    "photo_sha256": "a2d6772f7aed74e7373303ea33c73c5089bf38566f06a4f268015d9cc177be56",
+    "reports": {
+      "manager": {
+        "headers": [
+          "Группа",
+          "Позиции",
+          "Первичные недостачи, ₽",
+          "Первичные излишки, ₽",
+          "Утверждённый итог, ₽",
+          "Взыскано, ₽"
+        ],
+        "rows": [
+          [
+            "ДЕМО · Нова",
+            1,
+            40.5,
+            0.0,
+            0,
+            0
+          ]
+        ],
+        "period": "Все даты — сейчас",
+        "kind": "inventory"
+      },
+      "inspector": {
+        "headers": [
+          "Группа",
+          "Позиции",
+          "Первичные недостачи, ₽",
+          "Первичные излишки, ₽",
+          "Утверждённый итог, ₽",
+          "Взыскано, ₽"
+        ],
+        "rows": [
+          [
+            "ДЕМО · Нова",
+            1,
+            40.5,
+            0.0,
+            0,
+            0
+          ]
+        ],
+        "period": "Все даты — сейчас",
+        "kind": "inventory"
+      }
+    },
+    "version": 2
+  },
+  "import_scope": {
+    "unauthorized_site_all_rows_rejected": 11094,
+    "no_writes": true
+  },
+  "reads": {
+    "manager": {
+      "rows": 22189,
+      "page_max_seconds": 1.985,
+      "state_bytes": 11744
+    },
+    "inspector": {
+      "rows": 22189,
+      "page_max_seconds": 2.108,
+      "state_bytes": 11392
+    },
+    "limited": {
+      "rows": 11095,
+      "page_max_seconds": 2.778,
+      "state_bytes": 7809
+    }
+  },
+  "history": {
+    "manager": {
+      "rows": 22189,
+      "pages": 222,
+      "seconds": 12.948,
+      "digest": "917c460c4c5de7895217dfb4b9c177314d061b3057001744292d6e024f071c01"
+    },
+    "inspector": {
+      "rows": 22189,
+      "pages": 222,
+      "seconds": 13.117,
+      "digest": "917c460c4c5de7895217dfb4b9c177314d061b3057001744292d6e024f071c01"
+    },
+    "limited": {
+      "rows": 0,
+      "pages": 0,
+      "seconds": 0.791,
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "export": {
+    "rows": 22189,
+    "seconds": 8.377,
+    "digest": "c9074ee0a0418adbece1604191f7991413a5a10e26021f4abd32522b75ce8551",
+    "totals": {
+      "quantity": "88758",
+      "cost": "898674.7500",
+      "residual": "715611.3750",
+      "reimbursable": "90780.7500",
+      "reimbursed": "22189.3750"
+    }
+  },
+  "scoped_export": {
+    "rows": 11095,
+    "seconds": 5.103,
+    "digest": "1a8953c1827a81861d8811e4097c115b5551694263026d1b1098abf569797f4d",
+    "totals": {
+      "quantity": "44380",
+      "cost": "449347.5000",
+      "residual": "357813.7500",
+      "reimbursable": "45391.5000",
+      "reimbursed": "11095.0000"
+    }
+  },
+  "backup_first": {
+    "seconds": 3.984,
+    "bytes": 156979388,
+    "sha256": "2cf7f2b59bcae68909c376d07a4719d99f5183c7c1c1ebbe77202b19c794a1d6",
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "9fc7f20852793268c370fad96e64ea536efa167713a4730c2fec24cd2bcea023"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 38,
+        "sha256": "43baf0c4637d7d7a5c098fe762c0787f70cd36b2b66513fa29d3c32070c8c836"
+      },
+      "audit": {
+        "count": 22228,
+        "sha256": "edc1a3475bd1e1419dcf8610f814b6b774026625db0b49e6bfbda06e977d57ca"
+      },
+      "mutations": {
+        "count": 5,
+        "sha256": "220ee8adef8ead000f7f655f2b938d756cf4e333dd104d58d0ef704b206fa848"
+      },
+      "media": {
+        "count": 1,
+        "sha256": "4570014aef0e9f295b23e2f6620c6d7f9a6b98083c2008c46b6c8798017c249d"
+      },
+      "imports": {
+        "count": 2,
+        "sha256": "8fd401839e2656a187fbe8e358cdeb869ca5a6bb50bafc09d10ca95e6132b875"
+      },
+      "decision_records": {
+        "count": 22189,
+        "sha256": "0cf24f292df761e7751b1525d17037cfec209c02d5e42e19cf4edcaca6135374"
+      }
+    }
+  },
+  "backup_repeat": {
+    "seconds": 4.008,
+    "bytes": 156979388,
+    "sha256": "037d43f2e9af747f0a13aef974bb0c339c8d5026aad3face00addabcf46183ff",
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "9fc7f20852793268c370fad96e64ea536efa167713a4730c2fec24cd2bcea023"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 38,
+        "sha256": "43baf0c4637d7d7a5c098fe762c0787f70cd36b2b66513fa29d3c32070c8c836"
+      },
+      "audit": {
+        "count": 22228,
+        "sha256": "edc1a3475bd1e1419dcf8610f814b6b774026625db0b49e6bfbda06e977d57ca"
+      },
+      "mutations": {
+        "count": 5,
+        "sha256": "220ee8adef8ead000f7f655f2b938d756cf4e333dd104d58d0ef704b206fa848"
+      },
+      "media": {
+        "count": 1,
+        "sha256": "4570014aef0e9f295b23e2f6620c6d7f9a6b98083c2008c46b6c8798017c249d"
+      },
+      "imports": {
+        "count": 2,
+        "sha256": "8fd401839e2656a187fbe8e358cdeb869ca5a6bb50bafc09d10ca95e6132b875"
+      },
+      "decision_records": {
+        "count": 22189,
+        "sha256": "0cf24f292df761e7751b1525d17037cfec209c02d5e42e19cf4edcaca6135374"
+      }
+    }
+  },
+  "restore": {
+    "seconds": 5.453,
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "9fc7f20852793268c370fad96e64ea536efa167713a4730c2fec24cd2bcea023"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 38,
+        "sha256": "43baf0c4637d7d7a5c098fe762c0787f70cd36b2b66513fa29d3c32070c8c836"
+      },
+      "audit": {
+        "count": 22228,
+        "sha256": "edc1a3475bd1e1419dcf8610f814b6b774026625db0b49e6bfbda06e977d57ca"
+      },
+      "mutations": {
+        "count": 5,
+        "sha256": "220ee8adef8ead000f7f655f2b938d756cf4e333dd104d58d0ef704b206fa848"
+      },
+      "media": {
+        "count": 1,
+        "sha256": "4570014aef0e9f295b23e2f6620c6d7f9a6b98083c2008c46b6c8798017c249d"
+      },
+      "imports": {
+        "count": 2,
+        "sha256": "8fd401839e2656a187fbe8e358cdeb869ca5a6bb50bafc09d10ca95e6132b875"
+      },
+      "decision_records": {
+        "count": 22189,
+        "sha256": "0cf24f292df761e7751b1525d17037cfec209c02d5e42e19cf4edcaca6135374"
+      }
+    },
+    "sessions_revoked": true,
+    "stats": {
+      "database_bytes": 205772467,
+      "wal_disk_bytes": 201326592,
+      "wal_lsn": "0/C068B40",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 101883904,
+          "heap_bytes": 5767168,
+          "index_bytes": 4210688,
+          "toast_and_aux_bytes": 91906048
+        },
+        "audit": {
+          "total_bytes": 95567872,
+          "heap_bytes": 3145728,
+          "index_bytes": 516096,
+          "toast_and_aux_bytes": 91906048
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 22189,
+        "imports": 2,
+        "audit": 22228
+      }
+    }
+  },
+  "restored_reads": {
+    "manager": {
+      "rows": 22189,
+      "page_max_seconds": 2.024,
+      "state_bytes": 11744
+    },
+    "inspector": {
+      "rows": 22189,
+      "page_max_seconds": 2.005,
+      "state_bytes": 11392
+    },
+    "limited": {
+      "rows": 11095,
+      "page_max_seconds": 2.297,
+      "state_bytes": 7809
+    }
+  },
+  "restored_history": {
+    "manager": {
+      "rows": 22189,
+      "pages": 222,
+      "seconds": 13.051,
+      "digest": "917c460c4c5de7895217dfb4b9c177314d061b3057001744292d6e024f071c01"
+    },
+    "inspector": {
+      "rows": 22189,
+      "pages": 222,
+      "seconds": 13.165,
+      "digest": "917c460c4c5de7895217dfb4b9c177314d061b3057001744292d6e024f071c01"
+    },
+    "limited": {
+      "rows": 0,
+      "pages": 0,
+      "seconds": 0.713,
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "restored_export": {
+    "rows": 22189,
+    "seconds": 8.384,
+    "digest": "c9074ee0a0418adbece1604191f7991413a5a10e26021f4abd32522b75ce8551",
+    "totals": {
+      "quantity": "88758",
+      "cost": "898674.7500",
+      "residual": "715611.3750",
+      "reimbursable": "90780.7500",
+      "reimbursed": "22189.3750"
+    }
+  },
+  "restored_rows": {
+    "18": {
+      "rows": 11095,
+      "all_fields_and_comments_match": true,
+      "leading_zero_ids_match": true,
+      "every_audit_present": true,
+      "digest": "fd3c4965125a837886d2cd663569ec6b61f89e82252630cd083a7dc9f41b398d",
+      "totals": {
+        "quantity": "44380",
+        "cost": "449347.5000",
+        "residual": "357813.7500",
+        "reimbursable": "45391.5000",
+        "reimbursed": "11095.0000"
+      }
+    },
+    "18b": {
+      "rows": 11094,
+      "all_fields_and_comments_match": true,
+      "leading_zero_ids_match": true,
+      "every_audit_present": true,
+      "digest": "e767f4ec03a979beb6d29faeff4e583dd33c71b20295fb5ac29a83f2e277e5dd",
+      "totals": {
+        "quantity": "44378",
+        "cost": "449327.2500",
+        "residual": "357797.6250",
+        "reimbursable": "45389.2500",
+        "reimbursed": "11094.3750"
+      }
+    }
+  },
+  "continuation": {
+    "repeat_no_duplicates": true,
+    "visit_version_3": true,
+    "new_import_rows": 1,
+    "old_session_401": true,
+    "stale_version_409": true,
+    "first_backup_preserved": true
+  },
+  "backup_after_restore": {
+    "seconds": 4.1,
+    "bytes": 156984465,
+    "sha256": "94120923f3adc2f9d21233d1ed7b87d0578cdaac72f7582b706cffe5ef07bb4d",
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "9fc7f20852793268c370fad96e64ea536efa167713a4730c2fec24cd2bcea023"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 38,
+        "sha256": "ef7f18c4674626a636f369be9306aca0856b204fa12b6b1cdda01ad6a6b32e10"
+      },
+      "audit": {
+        "count": 22230,
+        "sha256": "46d990d35640d79553bd04397a641540099247006973eeceed07b0c55533318c"
+      },
+      "mutations": {
+        "count": 6,
+        "sha256": "89aa7964dc3d3b16f86ee7f32389a82d7837666b2155d120d7b87cdfc122f522"
+      },
+      "media": {
+        "count": 1,
+        "sha256": "4570014aef0e9f295b23e2f6620c6d7f9a6b98083c2008c46b6c8798017c249d"
+      },
+      "imports": {
+        "count": 3,
+        "sha256": "c4ae19535cb697a356b05b342f7ed4c050ee8b0b3543b92c7e1ae95e381cb236"
+      },
+      "decision_records": {
+        "count": 22190,
+        "sha256": "9983c2ef3a8a225578d64b35f553ab94531e08dc3c7aa327873ef3c69f2c6e69"
+      }
+    }
+  },
+  "faults": {
+    "mid_commit_rollback_at_row": 500,
+    "recovered_rows": 11095,
+    "worker_sigkill_recovered": true,
+    "lowered_one_second_timeout_recovered": true,
+    "actual_oom_injected": false,
+    "after_rollback": {
+      "database_bytes": 12990131,
+      "wal_disk_bytes": 369098752,
+      "wal_lsn": "0/16A48000",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 2424832,
+          "heap_bytes": 131072,
+          "index_bytes": 163840,
+          "toast_and_aux_bytes": 2129920
+        },
+        "audit": {
+          "total_bytes": 2244608,
+          "heap_bytes": 81920,
+          "index_bytes": 32768,
+          "toast_and_aux_bytes": 2129920
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        }
+      },
+      "counts": {
+        "decision_records": 0,
+        "imports": 0,
+        "audit": 34
+      }
+    },
+    "counts_after_failures": {
+      "decision_records": 11095,
+      "imports": 1,
+      "audit": 11129
+    }
+  },
+  "corrected_version": {
+    "new_sha_same_source_id_keeps_both_versions": true,
+    "rows": 2,
+    "naive_sum": "22.0000",
+    "intended_latest_cost": "12.0000",
+    "kpi_release_blocked_pending_version_policy": true
+  },
+  "health": {
+    "standalone18": {
+      "upload": {
+        "samples": 10,
+        "failures": 0,
+        "max_seconds": 0.071
+      },
+      "preview": {
+        "samples": 49,
+        "failures": 0,
+        "max_seconds": 0.074
+      },
+      "commit": {
+        "samples": 145,
+        "failures": 0,
+        "max_seconds": 0.073
+      },
+      "verify-all": {
+        "samples": 12,
+        "failures": 0,
+        "max_seconds": 0.067
+      },
+      "repeat": {
+        "samples": 28,
+        "failures": 0,
+        "max_seconds": 0.07
+      },
+      "operational": {
+        "samples": 1,
+        "failures": 0,
+        "max_seconds": 0.007
+      },
+      "import-scope": {
+        "samples": 11,
+        "failures": 0,
+        "max_seconds": 0.071
+      },
+      "register-read": {
+        "samples": 55,
+        "failures": 0,
+        "max_seconds": 0.087
+      },
+      "full-history": {
+        "samples": 51,
+        "failures": 0,
+        "max_seconds": 0.068
+      },
+      "export": {
+        "samples": 26,
+        "failures": 0,
+        "max_seconds": 0.074
+      },
+      "fingerprints": {
+        "samples": 3,
+        "failures": 0,
+        "max_seconds": 0.046
+      },
+      "backup": {
+        "samples": 16,
+        "failures": 0,
+        "max_seconds": 0.06
+      }
+    },
+    "standalone30": {
+      "upload": {
+        "samples": 5,
+        "failures": 0,
+        "max_seconds": 0.064
+      },
+      "preview": {
+        "samples": 24,
+        "failures": 0,
+        "max_seconds": 0.074
+      },
+      "commit": {
+        "samples": 33,
+        "failures": 0,
+        "max_seconds": 0.061
+      },
+      "verify-all": {
+        "samples": 12,
+        "failures": 0,
+        "max_seconds": 0.081
+      },
+      "repeat": {
+        "samples": 21,
+        "failures": 0,
+        "max_seconds": 0.07
+      }
+    },
+    "independent-restored": {
+      "register-read": {
+        "samples": 52,
+        "failures": 0,
+        "max_seconds": 0.076
+      },
+      "full-history": {
+        "samples": 51,
+        "failures": 0,
+        "max_seconds": 0.064
+      },
+      "export": {
+        "samples": 64,
+        "failures": 0,
+        "max_seconds": 0.077
+      },
+      "backup": {
+        "samples": 12,
+        "failures": 0,
+        "max_seconds": 0.068
+      }
+    },
+    "faults": {
+      "fault-injection": {
+        "samples": 64,
+        "failures": 0,
+        "max_seconds": 0.073
+      }
+    },
+    "version-probe": {
+      "corrected-version": {
+        "samples": 14,
+        "failures": 0,
+        "max_seconds": 0.068
+      }
+    }
+  },
+  "app_resources": {
+    "phases": {
+      "generate": {
+        "anon_peak_bytes": 119492608,
+        "file_cache_peak_bytes": 101978112,
+        "total_peak_bytes": 189784064,
+        "disk_peak_bytes": 101963073,
+        "staging_disk_peak_bytes": 0,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:upload": {
+        "anon_peak_bytes": 183300096,
+        "file_cache_peak_bytes": 242380800,
+        "total_peak_bytes": 427720704,
+        "disk_peak_bytes": 242329101,
+        "staging_disk_peak_bytes": 176117669,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:preview": {
+        "anon_peak_bytes": 187375616,
+        "file_cache_peak_bytes": 358436864,
+        "total_peak_bytes": 559386624,
+        "disk_peak_bytes": 358384319,
+        "staging_disk_peak_bytes": 292169464,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:commit": {
+        "anon_peak_bytes": 213139456,
+        "file_cache_peak_bytes": 358608896,
+        "total_peak_bytes": 585572352,
+        "disk_peak_bytes": 358553776,
+        "staging_disk_peak_bytes": 292169531,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:verify-all": {
+        "anon_peak_bytes": 140206080,
+        "file_cache_peak_bytes": 212336640,
+        "total_peak_bytes": 361390080,
+        "disk_peak_bytes": 212308446,
+        "staging_disk_peak_bytes": 146100899,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:repeat": {
+        "anon_peak_bytes": 184102912,
+        "file_cache_peak_bytes": 275939328,
+        "total_peak_bytes": 464289792,
+        "disk_peak_bytes": 275891929,
+        "staging_disk_peak_bytes": 209681281,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:upload": {
+        "anon_peak_bytes": 256585728,
+        "file_cache_peak_bytes": 415363072,
+        "total_peak_bytes": 688074752,
+        "disk_peak_bytes": 415295625,
+        "staging_disk_peak_bytes": 322169794,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:preview": {
+        "anon_peak_bytes": 261664768,
+        "file_cache_peak_bytes": 503283712,
+        "total_peak_bytes": 783400960,
+        "disk_peak_bytes": 503219532,
+        "staging_disk_peak_bytes": 436830403,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:commit": {
+        "anon_peak_bytes": 258125824,
+        "file_cache_peak_bytes": 504680448,
+        "total_peak_bytes": 781721600,
+        "disk_peak_bytes": 504618756,
+        "staging_disk_peak_bytes": 438221594,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:verify-all": {
+        "anon_peak_bytes": 215523328,
+        "file_cache_peak_bytes": 397320192,
+        "total_peak_bytes": 627871744,
+        "disk_peak_bytes": 397263556,
+        "staging_disk_peak_bytes": 292186044,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:repeat": {
+        "anon_peak_bytes": 262713344,
+        "file_cache_peak_bytes": 543383552,
+        "total_peak_bytes": 824176640,
+        "disk_peak_bytes": 543321444,
+        "staging_disk_peak_bytes": 438238107,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:operational": {
+        "anon_peak_bytes": 145076224,
+        "file_cache_peak_bytes": 460939264,
+        "total_peak_bytes": 622432256,
+        "disk_peak_bytes": 460875509,
+        "staging_disk_peak_bytes": 355786713,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:import-scope": {
+        "anon_peak_bytes": 193482752,
+        "file_cache_peak_bytes": 481406976,
+        "total_peak_bytes": 691630080,
+        "disk_peak_bytes": 481327250,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:register-read": {
+        "anon_peak_bytes": 150564864,
+        "file_cache_peak_bytes": 481411072,
+        "total_peak_bytes": 649150464,
+        "disk_peak_bytes": 481332767,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:full-history": {
+        "anon_peak_bytes": 174661632,
+        "file_cache_peak_bytes": 481456128,
+        "total_peak_bytes": 673267712,
+        "disk_peak_bytes": 481379059,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:export": {
+        "anon_peak_bytes": 174665728,
+        "file_cache_peak_bytes": 481460224,
+        "total_peak_bytes": 673357824,
+        "disk_peak_bytes": 481380886,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:fingerprints": {
+        "anon_peak_bytes": 174665728,
+        "file_cache_peak_bytes": 481460224,
+        "total_peak_bytes": 673325056,
+        "disk_peak_bytes": 481381134,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:backup": {
+        "anon_peak_bytes": 178618368,
+        "file_cache_peak_bytes": 853327872,
+        "total_peak_bytes": 1055547392,
+        "disk_peak_bytes": 934801586,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 167783444
+      },
+      "independent-restore": {
+        "anon_peak_bytes": 166137856,
+        "file_cache_peak_bytes": 870846464,
+        "total_peak_bytes": 997564416,
+        "disk_peak_bytes": 952319383,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:register-read": {
+        "anon_peak_bytes": 170008576,
+        "file_cache_peak_bytes": 713875456,
+        "total_peak_bytes": 907411456,
+        "disk_peak_bytes": 795347924,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:full-history": {
+        "anon_peak_bytes": 175304704,
+        "file_cache_peak_bytes": 713920512,
+        "total_peak_bytes": 912695296,
+        "disk_peak_bytes": 795394216,
+        "staging_disk_peak_bytes": 376235286,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:export": {
+        "anon_peak_bytes": 219779072,
+        "file_cache_peak_bytes": 777560064,
+        "total_peak_bytes": 1021349888,
+        "disk_peak_bytes": 859015679,
+        "staging_disk_peak_bytes": 439831795,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:backup": {
+        "anon_peak_bytes": 180129792,
+        "file_cache_peak_bytes": 869138432,
+        "total_peak_bytes": 1073684480,
+        "disk_peak_bytes": 1033218902,
+        "staging_disk_peak_bytes": 376270535,
+        "backup_disk_peak_bytes": 242724841
+      },
+      "faults:fault-injection": {
+        "anon_peak_bytes": 213762048,
+        "file_cache_peak_bytes": 811970560,
+        "total_peak_bytes": 1052008448,
+        "disk_peak_bytes": 1052250625,
+        "staging_disk_peak_bytes": 475889304,
+        "backup_disk_peak_bytes": 0
+      },
+      "version-probe:corrected-version": {
+        "anon_peak_bytes": 210378752,
+        "file_cache_peak_bytes": 748654592,
+        "total_peak_bytes": 984068096,
+        "disk_peak_bytes": 988896962,
+        "staging_disk_peak_bytes": 412352328,
+        "backup_disk_peak_bytes": 0
+      }
+    },
+    "elapsed_seconds": 377.414,
+    "cpu_usage_seconds": 141.316,
+    "cpu_throttled_seconds": 145.122,
+    "cpu_limit": "50000 100000",
+    "memory_limit": "1073741824",
+    "kernel_total_peak_bytes": 1074388992,
+    "oom_kills": 0
+  },
+  "database_resources": {
+    "source": {
+      "total_peak_bytes": 1072680960,
+      "anon_peak_bytes": 32210944,
+      "file_cache_peak_bytes": 1030246400,
+      "disk_peak_bytes": 895334352,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 55.085,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 40.926
+    },
+    "restored": {
+      "total_peak_bytes": 623489024,
+      "anon_peak_bytes": 24985600,
+      "file_cache_peak_bytes": 583462912,
+      "disk_peak_bytes": 436708366,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 29.736,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 19.821
+    }
+  },
+  "container_exit": {
+    "Status": "exited",
+    "OOMKilled": false,
+    "ExitCode": 0
+  }
+}
