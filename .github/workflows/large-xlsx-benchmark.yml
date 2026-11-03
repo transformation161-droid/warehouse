@@ -9,6 +9,9 @@ on:
       - 'Dockerfile'
       - '.github/workflows/large-xlsx-benchmark.yml'
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 jobs:
@@ -39,9 +42,9 @@ jobs:
               --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m --user "$(id -u):$(id -g)" \
               -v "$GITHUB_WORKSPACE/experiments:/bench/experiments:ro" \
               -v "$RUNNER_TEMP/ksu-fixtures:/fixtures:ro" -v "$RUNNER_TEMP/ksu-results:/out:rw" \
-              -e PYTHONPATH=/bench --entrypoint python ksu-amvera:issue10-bench \
+              -e PYTHONPATH=/bench -e GITHUB_ACTIONS=true --entrypoint python ksu-amvera:issue10-bench \
               -m experiments.large_xlsx.full_flow "/fixtures/demo-$size.xlsx" "/out/full$size" \
-              > "$RUNNER_TEMP/ksu-results/metrics-$size.json"
+              | tee "$RUNNER_TEMP/ksu-results/metrics-$size.json"
           done
       - name: Publish only aggregate synthetic metrics
         env:

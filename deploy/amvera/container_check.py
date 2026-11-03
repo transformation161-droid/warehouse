@@ -162,7 +162,11 @@ def run(image,caddy,output):
                 message=(type(error).__name__+': '+str(error)).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
                 print('::error title=Container acceptance::'+message,flush=True)
             for name in running:
-                print('Container diagnostic:',docker('logs','--tail','35',name,check=False).stderr[-3500:])
+                diagnostic=docker('logs','--tail','35',name,check=False).stderr[-3500:]
+                print('Container diagnostic:',diagnostic)
+                if os.getenv('GITHUB_ACTIONS')=='true':
+                    message=diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                    print('::error title=Synthetic container traceback::'+message,flush=True)
             if (folder/'caddy.log').exists():print('Proxy diagnostic:',(folder/'caddy.log').read_text()[-1500:])
             raise
         finally:

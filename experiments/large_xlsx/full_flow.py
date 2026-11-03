@@ -111,6 +111,12 @@ def run(source, output):
             metrics.update({'accepted':preview['accepted'],'rejected':preview['rejected'],'all_values_match_source':True,
                    'original_comments_preserved':True,'duplicate_suppressed':True,'no_rows_before_commit':True,
                    'formula_warning':bool(preview['warning']),'database_bytes':database.stat().st_size})
+    except Exception as error:
+        # Synthetic data only; make failures readable through the Checks API too.
+        if os.getenv('GITHUB_ACTIONS')=='true':
+            message=(type(error).__name__+': '+str(error)).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+            print('::error title=Synthetic XLSX acceptance::'+message,flush=True)
+        raise
     finally:
         stop.set()
         if monitor:monitor.join(timeout=10)
