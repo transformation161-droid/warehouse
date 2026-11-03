@@ -1,0 +1,90 @@
+{
+  "synthetic_only": true,
+  "local_container": {
+    "scenario": "synthetic; two simultaneous sessions, 1000 inventory rows, 12 MP JPEG, grouped XLSX/PDF",
+    "configured_cpu": 0.5,
+    "configured_memory_bytes": 1073741824,
+    "memory_peak_bytes": 256012288,
+    "cgroup_memory_max": "1073741824",
+    "cgroup_cpu_max": "50000 100000",
+    "oom_killed": false,
+    "runtime_uid": 10001,
+    "latency_seconds": {
+      "state": {
+        "count": 4,
+        "max": 0.918,
+        "mean": 0.28
+      },
+      "xlsx": {
+        "count": 4,
+        "max": 0.301,
+        "mean": 0.231
+      },
+      "pdf": {
+        "count": 4,
+        "max": 2.117,
+        "mean": 1.773
+      },
+      "photo": {
+        "count": 2,
+        "max": 1.188,
+        "mean": 0.753
+      }
+    },
+    "restart_verified": true,
+    "container_recreation_verified": true,
+    "new_image_rebuild_verified": true,
+    "photo_and_audit_persisted": true,
+    "independent_copy_verified": true,
+    "restored_copy_verified": true,
+    "second_replica_rejected": true,
+    "tls_verification": "trusted test CA; hostname verification on; no insecure flags",
+    "image_id": "sha256:a841452d23c52937ebdaa317a22f6762f9dfe6170d0e6c2048b8bf17299e321d"
+  },
+  "local_xlsx_18": {
+    "synthetic_only": true,
+    "source_bytes": 18000000,
+    "phases": {
+      "upload_seconds": 1.305,
+      "preview_seconds": 4.599,
+      "commit_seconds": 1.575
+    },
+    "accepted": 11138,
+    "rejected": 0,
+    "all_values_match_source": true,
+    "original_comments_preserved": true,
+    "duplicate_suppressed": true,
+    "no_rows_before_commit": true,
+    "formula_warning": true,
+    "database_bytes": 93413376,
+    "health_samples": 88,
+    "health_failures": 0,
+    "health_max_seconds": 0.086,
+    "memory_peak_bytes": 409563136,
+    "memory_limit": "1073741824",
+    "cpu_limit": "50000 100000"
+  },
+  "local_xlsx_30": {
+    "synthetic_only": true,
+    "source_bytes": 30000000,
+    "phases": {
+      "upload_seconds": 1.38,
+      "preview_seconds": 8.019,
+      "commit_seconds": 2.182
+    },
+    "accepted": 18900,
+    "rejected": 0,
+    "all_values_match_source": true,
+    "original_comments_preserved": true,
+    "duplicate_suppressed": true,
+    "no_rows_before_commit": true,
+    "formula_warning": true,
+    "database_bytes": 158433280,
+    "health_samples": 139,
+    "health_failures": 0,
+    "health_max_seconds": 0.073,
+    "memory_peak_bytes": 623157248,
+    "memory_limit": "1073741824",
+    "cpu_limit": "50000 100000"
+  }
+}

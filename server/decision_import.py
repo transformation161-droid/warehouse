@@ -247,11 +247,17 @@ def worker_main(folder, action):
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_AS,(384*1024*1024,384*1024*1024))
     resource.setrlimit(resource.RLIMIT_CPU,(100,100))
-    import ctypes, signal
+    import signal
     expected_parent=int(os.getenv('KSU_IMPORT_PARENT_PID',str(os.getppid())))
     if sys.platform.startswith('linux'):
-        ctypes.CDLL(None).prctl(1,signal.SIGTERM)
-        if os.getppid()!=expected_parent:raise SystemExit(98)
+        # PDEATHSIG tracks the spawning Linux thread, not the server process.
+        # AnyIO retires idle request threads while a long import is still running.
+        # Watch the process parent instead, without adding a memory-heavy thread.
+        def check_parent(signum=None, frame=None):
+            if os.getppid()!=expected_parent:raise SystemExit(98)
+        check_parent()
+        signal.signal(signal.SIGALRM,check_parent)
+        signal.setitimer(signal.ITIMER_REAL,1,1)
     meta=read_meta(folder)
     try:
         db=Database(meta['database'])
