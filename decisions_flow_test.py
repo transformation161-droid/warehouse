@@ -1,3 +1,4 @@
+from tests.pg_environment import prepare_browser_database
 """Two-browser acceptance of the new profile; synthetic XLSX only."""
 import io
 import os
@@ -28,6 +29,7 @@ def run():
     out=io.BytesIO();book.save(out)
     with tempfile.TemporaryDirectory(prefix='ksu-decisions-ui-') as folder:
         database=Path(folder)/'synthetic.sqlite3';seed_demo(Database(database),MANAGER_PASSWORD,INSPECTOR_PASSWORD)
+        prepare_browser_database(database)
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         origin=f'http://localhost:{port}'
         env={**os.environ,'KSU_DB':str(database),'KSU_ORIGIN':origin,'KSU_SECURE_COOKIES':'0'}

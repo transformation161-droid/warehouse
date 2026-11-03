@@ -8,6 +8,7 @@ import time
 import warnings
 import asyncio
 import sqlite3
+import psycopg
 import tempfile
 import threading
 from pathlib import Path
@@ -35,8 +36,8 @@ def create_app(path=None, origin=None, secure=None):
         raise ValueError('HTTPS требует KSU_SECURE_COOKIES=1')
     if not public_origin.startswith('https://') and urlparse(public_origin).hostname not in ('localhost','127.0.0.1','testserver'):
         raise ValueError('Внешний адрес требует HTTPS')
-    database_path=path or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3'))
-    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1':
+    database_path=path or ('postgresql' if os.getenv('KSU_DATABASE_URL') else None) or os.getenv('KSU_DB',str(ROOT/'var/ksu.sqlite3'))
+    if os.getenv('KSU_REQUIRE_INITIALIZED','0')=='1' and str(database_path)!='postgresql' and not str(database_path).startswith(('postgresql://','postgres://')):
         # A missing data mount must never silently create a fresh, empty production database.
         from .maintenance import validate_database
         validate_database(database_path)
@@ -57,6 +58,8 @@ def create_app(path=None, origin=None, secure=None):
     async def storage_limit(request,error):
         return JSONResponse({'detail':str(error)},status_code=507)
 
+    @app.exception_handler(psycopg.OperationalError)
+    @app.exception_handler(psycopg.IntegrityError)
     @app.exception_handler(sqlite3.OperationalError)
     async def sqlite_failure(request, error):
         if 'full' in str(error).lower():
@@ -124,7 +127,7 @@ def create_app(path=None, origin=None, secure=None):
                 if r and r['until']>time.time() and r['count']>=10:
                     fail('Слишком много попыток. Повторите через 15 минут.',429)
                 # Reserve an attempt before expensive password verification.
-                con.execute('insert into attempts values(?,1,?) on conflict(key) do update set count=case when until<? then 1 else count+1 end, until=case when until<? then excluded.until else until end',
+                con.execute('insert into attempts values(?,1,?) on conflict(key) do update set count=case when attempts.until<? then 1 else attempts.count+1 end, until=case when attempts.until<? then excluded.until else attempts.until end',
                             (key,time.time()+900,time.time(),time.time()))
         user=db.user(body.username)
         valid=password_valid(body.password,user['password'] if user else DUMMY_PASSWORD)
@@ -132,7 +135,7 @@ def create_app(path=None, origin=None, secure=None):
         token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
         with db.connect() as con:
             for key in keys:
-                con.execute('update attempts set count=max(0,count-1) where key=?',(key,))
+                con.execute('update attempts set count=case when count>0 then count-1 else 0 end where key=?',(key,))
             con.execute('delete from sessions where expires<?',(time.time(),))
             if request.cookies.get('ksu_session'):con.execute('delete from sessions where token_hash=?',(digest(request.cookies['ksu_session']),))
             con.execute('insert into sessions values(?,?,?,?)',(digest(token),user['id'],csrf,time.time()+8*3600))
@@ -161,6 +164,26 @@ def create_app(path=None, origin=None, secure=None):
     def export_backup(request:Request):
         actor=auth(request,True)
         if actor['role']!='manager':fail('Резервные копии доступны только руководителю',403)
+        if db.backend=='postgresql':
+            from .pg_backup import backup_database, BackupError
+            backup_dsn=os.getenv('KSU_PG_BACKUP_DSN')
+            directory=os.getenv('KSU_PG_BACKUP_DIR')
+            if not backup_dsn or not directory:fail('PostgreSQL backup is not configured',503)
+            if not backup_gate.acquire(blocking=False):fail('Другая копия ещё формируется',429)
+            temporary=None
+            try:
+                Path(directory).mkdir(parents=True,exist_ok=True,mode=0o700)
+                temporary=tempfile.TemporaryDirectory(prefix='.private-backup-',dir=directory)
+                target=Path(temporary.name)/'backup.ksubackup'
+                result=backup_database(backup_dsn,target)
+                def cleanup_pg():
+                    temporary.cleanup();backup_gate.release()
+                return FileResponse(target,media_type='application/octet-stream',filename='ksu-postgresql.ksubackup',
+                    headers={'X-Backup-SHA256':result['sha256']},background=BackgroundTask(cleanup_pg))
+            except Exception:
+                if temporary:temporary.cleanup()
+                backup_gate.release()
+                fail('Не удалось сформировать PostgreSQL backup; проверьте лимиты и настройки локально',503)
         if not backup_gate.acquire(blocking=False):fail('Другая копия ещё формируется',429)
         temporary=None
         try:
@@ -212,7 +235,10 @@ def create_app(path=None, origin=None, secure=None):
         except HTTPException:raise
         except (ValueError,UnidentifiedImageError,OSError,Image.DecompressionBombError,Image.DecompressionBombWarning):fail('Невозможно прочитать изображение')
         ident=secrets.token_hex(24)
-        with db.connect(actor) as con:con.execute('insert into media values(?,?,?,?,?,?)',(ident,site,actor['id'],output.getvalue(),thumb.getvalue(),now()))
+        with db.connect(actor) as con:
+            if db.backend=='postgresql':
+                con.execute('begin immediate');db.check_capacity(con,len(output.getvalue())+len(thumb.getvalue())+65536)
+            con.execute('insert into media values(?,?,?,?,?,?)',(ident,site,actor['id'],output.getvalue(),thumb.getvalue(),now()))
         return {'url':'/api/media/'+ident}
 
     @app.get('/api/media/{ident}')
@@ -333,7 +359,7 @@ def create_app(path=None, origin=None, secure=None):
             writer.writerow(list(FIELDS.values())+['Лист-источник','Строка Excel'])
             yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
             with db.connect(actor) as con:
-                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by d.rowid',params):
+                for row in con.execute('select d.data,d.sheet,d.source_row from decision_records d where '+clause+' order by d.import_hash,d.sheet,d.source_row,d.id',params):
                     item=json.loads(row['data'])
                     writer.writerow([safe_cell(item.get(k) or '') for k in FIELDS]+[safe_cell(row['sheet']),row['source_row']])
                     yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
@@ -347,7 +373,7 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect(actor) as con:
             con.execute('begin')
             count=con.execute('select count(*) from decision_records d where '+clause,params).fetchone()[0]
-            rows=con.execute('select d.* from decision_records d where '+clause+' order by d.rowid desc limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
+            rows=con.execute('select d.* from decision_records d where '+clause+' order by (select created_at from imports where hash=d.import_hash) desc,d.source_row desc,d.id limit ? offset ?',params+(limit,(page-1)*limit)).fetchall()
         return {'page':page,'limit':limit,'total':count,'rows':[{'id':r['id'],'sourceRow':r['source_row'],'sheet':r['sheet'],
                  **{k:v for k,v in json.loads(r['data']).items() if k not in ('sourceCells','unmappedCells')}} for r in rows]}
 
@@ -357,7 +383,7 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect(actor) as con:
             row=con.execute('select * from decision_records where id=?',(ident,)).fetchone()
             if not row or not accessible(con,actor,row['site_id']):fail('Запись не найдена',404)
-            provenance=json.loads(con.execute('select raw_json from imports where hash=?',(row['import_hash'],)).fetchone()[0])
+            provenance=json.loads(db.import_metadata(con,row['import_hash']))
         return {'importStyles':provenance.get('styles',[]),'id':row['id'],'sourceRow':row['source_row'],'sheet':row['sheet'],'fileSha256':row['file_sha'],'importHash':row['import_hash'],'data':json.loads(row['data'])}
 
     @app.post('/api/import/{action}')

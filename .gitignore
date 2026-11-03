@@ -36,3 +36,9 @@ photos/
 *.cms
 *.partial
 pilot-acceptance.json
+
+# Private PostgreSQL artifacts
+*.dump
+*.ksubackup
+.pgpass
+pg-config.json

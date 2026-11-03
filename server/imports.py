@@ -69,7 +69,8 @@ def commit_import(db, actor, payload):
     if preview['missing'] or preview['errors'] or not rows:fail('Исправьте все ошибки и сопоставление колонок до импорта')
     with db.connect(actor) as con:
         con.execute('begin immediate')
-        if con.execute('select 1 from imports where hash=?',(preview['hash'],)).fetchone():
+        if db.backend=='postgresql':db.check_capacity(con,len(rows)*8192)
+        if db.import_exists(con,preview['hash']):
             return {'duplicate':True,'state':db.snapshot(con,actor)}
         groups={}
         for item in rows:

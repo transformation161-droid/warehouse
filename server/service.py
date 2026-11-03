@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import psycopg
 from datetime import date
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -25,6 +26,7 @@ def apply_changes(db, actor, batch):
     try:
         with db.connect(actor) as con:
             con.execute('begin immediate')
+            if db.backend=='postgresql':db.check_capacity(con)
             previous = con.execute('select body_hash from mutations where user_id=? and id=?', (actor['id'],batch.mutationId)).fetchone()
             if previous:
                 if previous[0] != body_hash:
@@ -54,8 +56,8 @@ def apply_changes(db, actor, batch):
                     fail('Для каждого нарушения чек-листа нужна ровно одна карточка')
             con.execute('insert into mutations values(?,?,?)',(actor['id'],batch.mutationId,body_hash))
             return db.snapshot(con, actor)
-    except sqlite3.IntegrityError as exc:
-        fail('Операция запрещена правилами базы данных' if 'forbidden' in str(exc) else 'Нарушена целостность данных',403)
+    except (sqlite3.IntegrityError,psycopg.IntegrityError) as exc:
+        fail('Операция запрещена правилами базы данных' if 'forbidden' in str(exc) or isinstance(exc,psycopg.IntegrityError) else 'Нарушена целостность данных',403)
 
 
 def save_record(con, actor, collection, ident, payload, expected_version):
@@ -70,6 +72,8 @@ def save_record(con, actor, collection, ident, payload, expected_version):
             fail('Завершённые и отменённые выезды неизменяемы',403)
     if (old['version'] if old else 0) != expected_version:
         fail('Запись изменена другим пользователем. Обновите данные и сравните изменения.',409)
+    if old and actor['role']=='inspector' and collection not in ('visits','inspections') and old['author_id']!=actor['id']:
+        fail('Можно изменять только собственные записи',403)
     if old and collection=='inspections':
         fail('Завершённый акт неизменяем',403)
     raw = {k:v for k,v in payload.items() if k not in ('id','version','createdBy','createdAt','updatedAt')}
