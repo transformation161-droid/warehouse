@@ -2,7 +2,7 @@ name: KSU server tests
 
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory]
   push:
     branches: [main]
 
@@ -48,11 +48,13 @@ jobs:
           python v11_flow_test.py 2>&1 | tee v11-results.txt
           python visits_flow_test.py 2>&1 | tee visits-results.txt
           python decisions_flow_test.py 2>&1 | tee decisions-results.txt
+          python calendar_flow_test.py 2>&1 | tee calendar-results.txt
       - name: Check JavaScript syntax
         run: |
           node --check app.js
           node --check sync.js
           node --check decisions.js
+          node --check calendar.js
 
       - name: Upload synthetic acceptance results
         if: always()
@@ -64,6 +66,7 @@ jobs:
             upgrade-results.json
             /tmp/ksu_desktop.png
             /tmp/ksu_mobile.png
+            /tmp/ksu_calendar_*.png
 
   amvera-container:
     runs-on: ubuntu-latest
