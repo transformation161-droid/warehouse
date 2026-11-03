@@ -1,0 +1,739 @@
+{
+  "synthetic_only": true,
+  "database_cap_bytes": 268435456,
+  "cap_raised": false,
+  "sqlite_contracts": 77,
+  "postgres_contracts": 41,
+  "browser_runs": 12,
+  "corrected_version": {
+    "new_sha_requires_explicit_manager_selection": true,
+    "active_rows": 1,
+    "historical_rows": 2,
+    "active_cost": "12.0000",
+    "double_count_prevented": true
+  },
+  "large_version_fixture": {
+    "synthetic_only": true,
+    "bytes": 18000000,
+    "rows": 11087,
+    "cells": 188479,
+    "shared_strings": false,
+    "digest": "dead015dbabbee81c962cdd8eb8758dac5724d4707cc4eeca149c37b6c184372",
+    "projection_digest": "9130ade37f7379ce1880597479c4e761a06945c5d7bee01ffef2299ae92c593e",
+    "totals": {
+      "quantity": "44349",
+      "cost": "449033.6250",
+      "residual": "357563.8125",
+      "reimbursable": "45357.7500",
+      "reimbursed": "11086.5625"
+    },
+    "rich": true,
+    "variant": 1
+  },
+  "large_version": {
+    "file_bytes": 18000000,
+    "active_rows": 11086,
+    "historical_rows": 22172,
+    "compare_seconds": 3.936,
+    "counts": {
+      "added": 0,
+      "changed": 1,
+      "removed": 0,
+      "unchanged": 11085
+    },
+    "totals": {
+      "quantity": "44349",
+      "cost": "449035.6250",
+      "residual": "357563.8125",
+      "reimbursable": "45357.7500",
+      "reimbursed": "11086.5625"
+    },
+    "all_fields_checked": true,
+    "original_preserved": true,
+    "stats": {
+      "database_bytes": 220935859,
+      "wal_disk_bytes": 402653184,
+      "wal_lsn": "0/2C7BCA78",
+      "tables": {
+        "decision_records": {
+          "total_bytes": 103030784,
+          "heap_bytes": 5505024,
+          "index_bytes": 5611520,
+          "toast_and_aux_bytes": 91914240
+        },
+        "audit": {
+          "total_bytes": 95576064,
+          "heap_bytes": 3145728,
+          "index_bytes": 516096,
+          "toast_and_aux_bytes": 91914240
+        },
+        "imports": {
+          "total_bytes": 32768,
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "toast_and_aux_bytes": 8192
+        },
+        "decision_documents": {
+          "total_bytes": 49152,
+          "heap_bytes": 8192,
+          "index_bytes": 32768,
+          "toast_and_aux_bytes": 8192
+        },
+        "decision_versions": {
+          "total_bytes": 65536,
+          "heap_bytes": 8192,
+          "index_bytes": 49152,
+          "toast_and_aux_bytes": 8192
+        },
+        "decision_entries": {
+          "total_bytes": 11542528,
+          "heap_bytes": 4816896,
+          "index_bytes": 6684672,
+          "toast_and_aux_bytes": 40960
+        },
+        "decision_retirements": {
+          "total_bytes": 2195456,
+          "heap_bytes": 1490944,
+          "index_bytes": 671744,
+          "toast_and_aux_bytes": 32768
+        }
+      },
+      "counts": {
+        "decision_records": 22172,
+        "imports": 2,
+        "audit": 22207
+      }
+    }
+  },
+  "large_version_backup": {
+    "seconds": 6.257,
+    "bytes": 163996619,
+    "sha256": "3af767ca45c75ad21c7758bbed836586e7a55f17bcd274fcf408dbf5ab382eba",
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "bdcb8539400cf161f40cc1f8a8a26e62144af95298a8aaf7bf134691782c8cbb"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 34,
+        "sha256": "5abd9d5eaa565a8e297e0b858efb4d388658a568ec0b5b553880dae720c0212d"
+      },
+      "audit": {
+        "count": 22207,
+        "sha256": "b363e346ec030efc6c1d7a24bba178da1677f47f4780a9ab998c1cd2e4eb0d77"
+      },
+      "mutations": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "media": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "imports": {
+        "count": 2,
+        "sha256": "ddf8e7c1e79038dc83d25ce62f82ccb319c645934781d04d2fe23fd822665695"
+      },
+      "decision_records": {
+        "count": 22172,
+        "sha256": "e29945247a3fcf56024e8acfd2655f897623ea40801000fe1e24a8d5407aa3fd"
+      },
+      "decision_documents": {
+        "count": 1,
+        "sha256": "c1298bb8c9956767c045350e03066bc0fa8da8b34903b1859c48bd813def057c"
+      },
+      "decision_versions": {
+        "count": 2,
+        "sha256": "88a3182aeea56e7d37daf05b05cc5a637072535b1ae230698823a892e223759a"
+      },
+      "decision_entries": {
+        "count": 22172,
+        "sha256": "8c73174a63b6f1de6ee2669c94a56efebaffd05bf6adb7c319772d687d326b03"
+      },
+      "decision_retirements": {
+        "count": 11086,
+        "sha256": "5f995f43b0250aad164b90bea706d5766cbf93292f71ba341f89237c954f4cba"
+      }
+    }
+  },
+  "large_version_restore": {
+    "all_fingerprints_match": true,
+    "historical_version_1_preserved": true,
+    "active_rows": 11086,
+    "partial_version_3_after_restore": true
+  },
+  "version_backup_after_restore": {
+    "seconds": 5.364,
+    "bytes": 164007497,
+    "sha256": "6756c7df45362b72b2cfb24194ba9ad23a21a8ca25ab14637e2a69f9a10b7395",
+    "tables": {
+      "users": {
+        "count": 3,
+        "sha256": "bdcb8539400cf161f40cc1f8a8a26e62144af95298a8aaf7bf134691782c8cbb"
+      },
+      "user_sites": {
+        "count": 13,
+        "sha256": "a9532ee41c3350ebc73e027eca12ef41254c910d202ace316eedc510ee702201"
+      },
+      "records": {
+        "count": 34,
+        "sha256": "5abd9d5eaa565a8e297e0b858efb4d388658a568ec0b5b553880dae720c0212d"
+      },
+      "audit": {
+        "count": 22209,
+        "sha256": "686d00a9d784997558f1f474cdf50301f795a2da690521d1651cc8a0d55f5ca2"
+      },
+      "mutations": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "media": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "imports": {
+        "count": 3,
+        "sha256": "a2ca3883c3d406e1079c8d8633b65e7594c195c96311e4162e9b46e197360f53"
+      },
+      "decision_records": {
+        "count": 22173,
+        "sha256": "7e5a06fbe4cf7e454b0736a956c3c40d505ab4b9b3c281f66ee22d9b5f134d26"
+      },
+      "decision_documents": {
+        "count": 1,
+        "sha256": "c1298bb8c9956767c045350e03066bc0fa8da8b34903b1859c48bd813def057c"
+      },
+      "decision_versions": {
+        "count": 3,
+        "sha256": "4394f508629f0a065c158424a7bc28c1b6533d639271e19a93274463db63c66a"
+      },
+      "decision_entries": {
+        "count": 22173,
+        "sha256": "988a5fda4673039a25c233a8b8349d513c369cec201761baf531da0f75161e65"
+      },
+      "decision_retirements": {
+        "count": 11087,
+        "sha256": "92b96378f11cc01a7a04028c85303b11b332026bd68ea2820ec0c5584db11b3d"
+      }
+    }
+  },
+  "app_resources": {
+    "phases": {
+      "generate": {
+        "anon_peak_bytes": 128647168,
+        "file_cache_peak_bytes": 97325056,
+        "total_peak_bytes": 199000064,
+        "disk_peak_bytes": 97300375,
+        "staging_disk_peak_bytes": 0,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:upload": {
+        "anon_peak_bytes": 181649408,
+        "file_cache_peak_bytes": 242462720,
+        "total_peak_bytes": 426991616,
+        "disk_peak_bytes": 242418586,
+        "staging_disk_peak_bytes": 176134472,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:preview": {
+        "anon_peak_bytes": 188346368,
+        "file_cache_peak_bytes": 358510592,
+        "total_peak_bytes": 554680320,
+        "disk_peak_bytes": 358465363,
+        "staging_disk_peak_bytes": 292177888,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:commit": {
+        "anon_peak_bytes": 214654976,
+        "file_cache_peak_bytes": 358752256,
+        "total_peak_bytes": 587292672,
+        "disk_peak_bytes": 358704698,
+        "staging_disk_peak_bytes": 292198908,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:verify-all": {
+        "anon_peak_bytes": 141045760,
+        "file_cache_peak_bytes": 212418560,
+        "total_peak_bytes": 362500096,
+        "disk_peak_bytes": 212389177,
+        "staging_disk_peak_bytes": 146109282,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:repeat": {
+        "anon_peak_bytes": 185020416,
+        "file_cache_peak_bytes": 276013056,
+        "total_peak_bytes": 467898368,
+        "disk_peak_bytes": 275972952,
+        "staging_disk_peak_bytes": 209689684,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:upload": {
+        "anon_peak_bytes": 260222976,
+        "file_cache_peak_bytes": 415506432,
+        "total_peak_bytes": 686878720,
+        "disk_peak_bytes": 415447560,
+        "staging_disk_peak_bytes": 322194846,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:preview": {
+        "anon_peak_bytes": 263143424,
+        "file_cache_peak_bytes": 503427072,
+        "total_peak_bytes": 785149952,
+        "disk_peak_bytes": 503370537,
+        "staging_disk_peak_bytes": 436847076,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:commit": {
+        "anon_peak_bytes": 260591616,
+        "file_cache_peak_bytes": 504856576,
+        "total_peak_bytes": 783880192,
+        "disk_peak_bytes": 504799983,
+        "staging_disk_peak_bytes": 438259319,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:verify-all": {
+        "anon_peak_bytes": 216911872,
+        "file_cache_peak_bytes": 397471744,
+        "total_peak_bytes": 629927936,
+        "disk_peak_bytes": 397423829,
+        "staging_disk_peak_bytes": 292202753,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone30:repeat": {
+        "anon_peak_bytes": 264065024,
+        "file_cache_peak_bytes": 543539200,
+        "total_peak_bytes": 825700352,
+        "disk_peak_bytes": 543481861,
+        "staging_disk_peak_bytes": 438254836,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:operational": {
+        "anon_peak_bytes": 146427904,
+        "file_cache_peak_bytes": 461099008,
+        "total_peak_bytes": 623894528,
+        "disk_peak_bytes": 461044232,
+        "staging_disk_peak_bytes": 355811691,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:import-scope": {
+        "anon_peak_bytes": 195010560,
+        "file_cache_peak_bytes": 481554432,
+        "total_peak_bytes": 693514240,
+        "disk_peak_bytes": 481496104,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:register-read": {
+        "anon_peak_bytes": 152817664,
+        "file_cache_peak_bytes": 481562624,
+        "total_peak_bytes": 651776000,
+        "disk_peak_bytes": 481503357,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:full-history": {
+        "anon_peak_bytes": 178499584,
+        "file_cache_peak_bytes": 481607680,
+        "total_peak_bytes": 677601280,
+        "disk_peak_bytes": 481549649,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:export": {
+        "anon_peak_bytes": 178987008,
+        "file_cache_peak_bytes": 481611776,
+        "total_peak_bytes": 677945344,
+        "disk_peak_bytes": 481551786,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:fingerprints": {
+        "anon_peak_bytes": 178987008,
+        "file_cache_peak_bytes": 481611776,
+        "total_peak_bytes": 677920768,
+        "disk_peak_bytes": 481552034,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "standalone18:backup": {
+        "anon_peak_bytes": 182890496,
+        "file_cache_peak_bytes": 866627584,
+        "total_peak_bytes": 1073659904,
+        "disk_peak_bytes": 964673116,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 326677397
+      },
+      "independent-restore": {
+        "anon_peak_bytes": 167661568,
+        "file_cache_peak_bytes": 866541568,
+        "total_peak_bytes": 995127296,
+        "disk_peak_bytes": 971570349,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:register-read": {
+        "anon_peak_bytes": 170557440,
+        "file_cache_peak_bytes": 703209472,
+        "total_peak_bytes": 897101824,
+        "disk_peak_bytes": 808240384,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:full-history": {
+        "anon_peak_bytes": 175419392,
+        "file_cache_peak_bytes": 703258624,
+        "total_peak_bytes": 901984256,
+        "disk_peak_bytes": 808287172,
+        "staging_disk_peak_bytes": 376260285,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:export": {
+        "anon_peak_bytes": 219643904,
+        "file_cache_peak_bytes": 766898176,
+        "total_peak_bytes": 1011920896,
+        "disk_peak_bytes": 871908758,
+        "staging_disk_peak_bytes": 439856836,
+        "backup_disk_peak_bytes": 0
+      },
+      "independent-restored:backup": {
+        "anon_peak_bytes": 182972416,
+        "file_cache_peak_bytes": 869261312,
+        "total_peak_bytes": 1073676288,
+        "disk_peak_bytes": 1123972793,
+        "staging_disk_peak_bytes": 376295632,
+        "backup_disk_peak_bytes": 315755893
+      },
+      "faults:fault-injection": {
+        "anon_peak_bytes": 228511744,
+        "file_cache_peak_bytes": 803741696,
+        "total_peak_bytes": 1052155904,
+        "disk_peak_bytes": 1071571708,
+        "staging_disk_peak_bytes": 475914531,
+        "backup_disk_peak_bytes": 0
+      },
+      "version-probe:corrected-version": {
+        "anon_peak_bytes": 227131392,
+        "file_cache_peak_bytes": 740712448,
+        "total_peak_bytes": 992534528,
+        "disk_peak_bytes": 1008525031,
+        "staging_disk_peak_bytes": 412448731,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:generate-one-document": {
+        "anon_peak_bytes": 185552896,
+        "file_cache_peak_bytes": 790294528,
+        "total_peak_bytes": 1001779200,
+        "disk_peak_bytes": 1058095925,
+        "staging_disk_peak_bytes": 412390234,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:upload": {
+        "anon_peak_bytes": 217890816,
+        "file_cache_peak_bytes": 776720384,
+        "total_peak_bytes": 1020948480,
+        "disk_peak_bytes": 1044526323,
+        "staging_disk_peak_bytes": 430390518,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:preview": {
+        "anon_peak_bytes": 230051840,
+        "file_cache_peak_bytes": 816803840,
+        "total_peak_bytes": 1072873472,
+        "disk_peak_bytes": 1090076541,
+        "staging_disk_peak_bytes": 475938525,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:commit": {
+        "anon_peak_bytes": 229498880,
+        "file_cache_peak_bytes": 816807936,
+        "total_peak_bytes": 1073074176,
+        "disk_peak_bytes": 1090499576,
+        "staging_disk_peak_bytes": 476353798,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:verify-all": {
+        "anon_peak_bytes": 186400768,
+        "file_cache_peak_bytes": 752099328,
+        "total_peak_bytes": 963571712,
+        "disk_peak_bytes": 1026561973,
+        "staging_disk_peak_bytes": 412407464,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:generate-correction": {
+        "anon_peak_bytes": 230539264,
+        "file_cache_peak_bytes": 816386048,
+        "total_peak_bytes": 1073729536,
+        "disk_peak_bytes": 1105709637,
+        "staging_disk_peak_bytes": 473552195,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:large-compare": {
+        "anon_peak_bytes": 232230912,
+        "file_cache_peak_bytes": 816230400,
+        "total_peak_bytes": 1073717248,
+        "disk_peak_bytes": 1158725631,
+        "staging_disk_peak_bytes": 526555887,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:verify-corrected-all": {
+        "anon_peak_bytes": 188289024,
+        "file_cache_peak_bytes": 699297792,
+        "total_peak_bytes": 911245312,
+        "disk_peak_bytes": 1044606051,
+        "staging_disk_peak_bytes": 412426369,
+        "backup_disk_peak_bytes": 0
+      },
+      "large-version:backup": {
+        "anon_peak_bytes": 192163840,
+        "file_cache_peak_bytes": 857145344,
+        "total_peak_bytes": 1073741824,
+        "disk_peak_bytes": 1343663035,
+        "staging_disk_peak_bytes": 412426369,
+        "backup_disk_peak_bytes": 299466131
+      },
+      "version-independent-restore": {
+        "anon_peak_bytes": 232308736,
+        "file_cache_peak_bytes": 856571904,
+        "total_peak_bytes": 1003507712,
+        "disk_peak_bytes": 1372598616,
+        "staging_disk_peak_bytes": 459632169,
+        "backup_disk_peak_bytes": 0
+      },
+      "restored-version:backup": {
+        "anon_peak_bytes": 191877120,
+        "file_cache_peak_bytes": 857096192,
+        "total_peak_bytes": 1073479680,
+        "disk_peak_bytes": 1536635021,
+        "staging_disk_peak_bytes": 412431114,
+        "backup_disk_peak_bytes": 328013359
+      }
+    },
+    "elapsed_seconds": 606.135,
+    "cpu_usage_seconds": 198.005,
+    "cpu_throttled_seconds": 181.56,
+    "cpu_limit": "50000 100000",
+    "memory_limit": "1073741824",
+    "kernel_total_peak_bytes": 1074622464,
+    "oom_kills": 0
+  },
+  "health": {
+    "standalone18": {
+      "upload": {
+        "samples": 11,
+        "failures": 0,
+        "max_seconds": 0.081
+      },
+      "preview": {
+        "samples": 52,
+        "failures": 0,
+        "max_seconds": 0.081
+      },
+      "commit": {
+        "samples": 230,
+        "failures": 0,
+        "max_seconds": 0.085
+      },
+      "verify-all": {
+        "samples": 13,
+        "failures": 0,
+        "max_seconds": 0.075
+      },
+      "repeat": {
+        "samples": 31,
+        "failures": 0,
+        "max_seconds": 0.081
+      },
+      "operational": {
+        "samples": 1,
+        "failures": 0,
+        "max_seconds": 0.008
+      },
+      "import-scope": {
+        "samples": 10,
+        "failures": 0,
+        "max_seconds": 0.068
+      },
+      "register-read": {
+        "samples": 84,
+        "failures": 0,
+        "max_seconds": 0.087
+      },
+      "full-history": {
+        "samples": 51,
+        "failures": 0,
+        "max_seconds": 0.07
+      },
+      "export": {
+        "samples": 30,
+        "failures": 0,
+        "max_seconds": 0.079
+      },
+      "fingerprints": {
+        "samples": 5,
+        "failures": 0,
+        "max_seconds": 0.053
+      },
+      "backup": {
+        "samples": 17,
+        "failures": 0,
+        "max_seconds": 0.073
+      }
+    },
+    "standalone30": {
+      "upload": {
+        "samples": 4,
+        "failures": 0,
+        "max_seconds": 0.063
+      },
+      "preview": {
+        "samples": 25,
+        "failures": 0,
+        "max_seconds": 0.065
+      },
+      "commit": {
+        "samples": 69,
+        "failures": 0,
+        "max_seconds": 0.076
+      },
+      "verify-all": {
+        "samples": 13,
+        "failures": 0,
+        "max_seconds": 0.098
+      },
+      "repeat": {
+        "samples": 21,
+        "failures": 0,
+        "max_seconds": 0.074
+      }
+    },
+    "independent-restored": {
+      "register-read": {
+        "samples": 71,
+        "failures": 0,
+        "max_seconds": 0.079
+      },
+      "full-history": {
+        "samples": 60,
+        "failures": 0,
+        "max_seconds": 0.061
+      },
+      "export": {
+        "samples": 68,
+        "failures": 0,
+        "max_seconds": 0.082
+      },
+      "backup": {
+        "samples": 14,
+        "failures": 0,
+        "max_seconds": 0.081
+      }
+    },
+    "faults": {
+      "fault-injection": {
+        "samples": 87,
+        "failures": 0,
+        "max_seconds": 0.074
+      }
+    },
+    "version-probe": {
+      "corrected-version": {
+        "samples": 24,
+        "failures": 0,
+        "max_seconds": 0.072
+      }
+    },
+    "large-version": {
+      "generate-one-document": {
+        "samples": 6,
+        "failures": 0,
+        "max_seconds": 0.065
+      },
+      "upload": {
+        "samples": 3,
+        "failures": 0,
+        "max_seconds": 0.011
+      },
+      "preview": {
+        "samples": 9,
+        "failures": 0,
+        "max_seconds": 0.071
+      },
+      "commit": {
+        "samples": 38,
+        "failures": 0,
+        "max_seconds": 0.076
+      },
+      "verify-all": {
+        "samples": 6,
+        "failures": 0,
+        "max_seconds": 0.062
+      },
+      "generate-correction": {
+        "samples": 17,
+        "failures": 0,
+        "max_seconds": 0.071
+      },
+      "large-compare": {
+        "samples": 58,
+        "failures": 0,
+        "max_seconds": 0.074
+      },
+      "verify-corrected-all": {
+        "samples": 23,
+        "failures": 0,
+        "max_seconds": 0.067
+      },
+      "backup": {
+        "samples": 12,
+        "failures": 0,
+        "max_seconds": 0.089
+      }
+    },
+    "restored-version": {
+      "setup": {
+        "samples": 30,
+        "failures": 0,
+        "max_seconds": 0.069
+      },
+      "backup": {
+        "samples": 11,
+        "failures": 0,
+        "max_seconds": 0.082
+      }
+    }
+  },
+  "cleanup_errors": [],
+  "database_resources": {
+    "source": {
+      "total_peak_bytes": 1073741824,
+      "anon_peak_bytes": 37748736,
+      "file_cache_peak_bytes": 1030139904,
+      "disk_peak_bytes": 1195835099,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 119.632,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 104.59
+    },
+    "restored": {
+      "total_peak_bytes": 1048719360,
+      "anon_peak_bytes": 36446208,
+      "file_cache_peak_bytes": 1000673280,
+      "disk_peak_bytes": 854256234,
+      "cpu_limit": 0.5,
+      "memory_limit_bytes": 1073741824,
+      "cpu_usage_seconds": 53.63,
+      "oom_kills": 0,
+      "cpu_throttled_seconds": 34.368
+    }
+  },
+  "container_exit": {
+    "Status": "exited",
+    "OOMKilled": false,
+    "ExitCode": 0
+  }
+}

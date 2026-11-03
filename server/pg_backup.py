@@ -12,7 +12,7 @@ import zipfile
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
-from .pg_admin import fingerprints, grant_runtime, grant_backup, TABLES
+from .pg_admin import fingerprints, grant_runtime, grant_backup, TABLES, LEGACY_TABLES, upgrade_schema
 from .pg_transport import validate_transport
 
 
@@ -53,10 +53,10 @@ def run_tool(name,args,dsn,output=None,maximum=None):
                 except subprocess.TimeoutExpired:process.kill();process.wait()
 
 
-def validate_schema(connection):
+def validate_schema(connection,version=2):
     tables={row[0] for row in connection.execute("select tablename from pg_tables where schemaname='ksu'")}
-    if tables!=set(TABLES)|{'schema_version','sessions','attempts'}:raise BackupError('Unsupported PostgreSQL schema; no table may be silently omitted')
-    if connection.execute('select coalesce(max(version),0) from ksu.schema_version').fetchone()[0]!=1:raise BackupError('Unsupported PostgreSQL schema version')
+    if tables!=set(LEGACY_TABLES if version==1 else TABLES)|{'schema_version','sessions','attempts'}:raise BackupError('Unsupported PostgreSQL schema; no table may be silently omitted')
+    if connection.execute('select coalesce(max(version),0) from ksu.schema_version').fetchone()[0]!=version:raise BackupError('Unsupported PostgreSQL schema version')
 
 
 def backup_database(dsn,destination):
@@ -78,7 +78,7 @@ def backup_database(dsn,destination):
             run_tool('pg_dump',['--format=custom','--compress=0','--no-owner','--no-acl','--schema=ksu',
                 '--exclude-table-data=ksu.sessions','--exclude-table-data=ksu.attempts','--snapshot='+snapshot,
                 '--lock-wait-timeout=15000','--file='+str(dump)],dsn,dump,maximum)
-            manifest={'format':'ksu-pg-backup-v1','schema_version':1,'dump_sha256':checksum(dump),
+            manifest={'format':'ksu-pg-backup-v1','schema_version':2,'dump_sha256':checksum(dump),
                       'tables':fingerprints(connection,True),'sessions_revoked':True}
         os.chmod(dump,0o600)
         with zipfile.ZipFile(bundle,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as archive:
@@ -105,7 +105,9 @@ def restore_database(source,dsn,runtime_role,backup_role=None):
         if any(item.compress_type!=zipfile.ZIP_STORED for item in archive.infolist()):raise BackupError('Compressed/untrusted package')
         if archive.getinfo('manifest.json').file_size>65536:raise BackupError('Manifest too large')
         manifest=json.loads(archive.read('manifest.json'))
-        if manifest.get('format')!='ksu-pg-backup-v1' or manifest.get('schema_version')!=1:raise BackupError('Unsupported backup format')
+        if manifest.get('format')!='ksu-pg-backup-v1' or manifest.get('schema_version') not in (1,2):raise BackupError('Unsupported backup format')
+        expected_tables=LEGACY_TABLES if manifest['schema_version']==1 else TABLES
+        if set(manifest.get('tables',{}))!=set(expected_tables):raise BackupError('Unexpected manifest tables')
         dump=Path(folder)/'database.dump'
         with archive.open('database.dump') as src,dump.open('xb') as dst:shutil.copyfileobj(src,dst,1024*1024)
         os.chmod(dump,0o600)
@@ -113,11 +115,15 @@ def restore_database(source,dsn,runtime_role,backup_role=None):
         # pg_restore executes SQL: only restore packages from a trusted administrator.
         run_tool('pg_restore',['--single-transaction','--exit-on-error','--no-owner','--no-acl','--dbname='+conninfo_to_dict(dsn).get('dbname','postgres'),str(dump)],dsn)
         with psycopg.connect(dsn,connect_timeout=10) as connection:
-            validate_schema(connection)
-            actual=fingerprints(connection,True)
+            validate_schema(connection,manifest['schema_version'])
+            actual=fingerprints(connection,True,expected_tables)
             if actual!=manifest['tables']:raise BackupError('Restored table checksums differ; do not start the app')
             if connection.execute('select count(*) from ksu.sessions').fetchone()[0] or connection.execute('select count(*) from ksu.attempts').fetchone()[0]:
                 raise BackupError('Restored sessions must be empty')
+            if manifest['schema_version']==1:
+                upgrade_schema(connection)
+                if fingerprints(connection,True,LEGACY_TABLES)!=actual:raise BackupError('Legacy data changed during restore upgrade')
+                actual=fingerprints(connection,True)
             grant_runtime(connection,runtime_role)
             if backup_role:grant_backup(connection,backup_role)
             if connection.execute("select count(*) from pg_constraint where connamespace='ksu'::regnamespace and not convalidated").fetchone()[0]:raise BackupError('Unvalidated constraints')

@@ -17,7 +17,7 @@ HEADERS = ['Row ID','Act date','Site','Document','Decision type','Tool type','Qu
 NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
 
-def generate(path, target, shared=False, *, variant=0, site="DEMO site", rich=False, scratch=None):
+def generate(path, target, shared=False, *, variant=0, site="DEMO site", rich=False, scratch=None,document=None):
     path=Path(path)
     if path.exists(): raise FileExistsError(path)
     if not 18_000_000 <= target <= 30_000_000: raise ValueError('18–30 MB synthetic fixtures only')
@@ -43,7 +43,7 @@ def generate(path, target, shared=False, *, variant=0, site="DEMO site", rich=Fa
                     noise=base64.b64encode(rng.randbytes(1500)).decode()
                     quantity=rowno%7+1
                     values=[('n',str(variant*100000+rowno-1),None),('inlineStr','2026-11-01',None),
-                        ('inlineStr',site,None),('inlineStr','DEMO-'+str(rowno//5),None),
+                        ('inlineStr',site,None),('inlineStr',document if document is not None else 'DEMO-'+str(rowno//5),None),
                         ('inlineStr','DEMO decision',None),('inlineStr','DEMO tool '+str(rowno%8),None),
                         ('n',str(quantity),None),('n',str(quantity*10.5),f'G{rowno}*10.5' if rowno%11==0 else None),
                         ('n',str(quantity*8.25),None),('inlineStr','DEMO reason',None),('inlineStr','DEMO case',None),

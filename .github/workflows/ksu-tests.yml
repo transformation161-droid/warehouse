@@ -2,7 +2,7 @@ name: KSU server tests
 
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry]
   push:
     branches: [main]
 
@@ -49,6 +49,7 @@ jobs:
           python visits_flow_test.py 2>&1 | tee visits-results.txt
           python decisions_flow_test.py 2>&1 | tee decisions-results.txt
           python calendar_flow_test.py 2>&1 | tee calendar-results.txt
+          python decision_versions_flow_test.py 2>&1 | tee decision-versions-results.txt
       - name: Check JavaScript syntax
         run: |
           node --check app.js
@@ -67,6 +68,7 @@ jobs:
             /tmp/ksu_desktop.png
             /tmp/ksu_mobile.png
             /tmp/ksu_calendar_*.png
+            /tmp/ksu_versions_*.png
 
   amvera-container:
     runs-on: ubuntu-latest

@@ -134,3 +134,16 @@ class DecisionPreview(Model):
 class MediaFile(Model):
     siteId: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=4_100_000)
+
+
+class DecisionVersionPreview(Model):
+    documentId: str = Field(min_length=1,max_length=80)
+    expectedVersion: int = Field(ge=1)
+    mode: Literal['full','partial']
+    reason: str = Field(min_length=1,max_length=1200)
+    targetIds: list[str] = Field(default_factory=list,max_length=50000)
+    matches: dict[str,str] = Field(default_factory=dict,max_length=50000)
+
+
+class DecisionVersionConfirm(Model):
+    token: str = Field(min_length=64,max_length=64)

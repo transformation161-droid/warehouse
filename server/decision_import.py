@@ -204,6 +204,7 @@ def preview(folder, db):
 
 
 def commit(folder, db):
+    from .decision_versions import assert_plan,begin_version,initial_document,check_new_collisions
     meta=read_meta(folder);actor=actor_for(db,meta['actor'])
     if not meta.get('accepted') or meta.get('rejected'):raise Rejected('Нужен успешный предпросмотр без ошибок')
     check_storage(db.path,reserve=meta['normalizedBytes']*3+64*1024*1024)
@@ -211,30 +212,48 @@ def commit(folder, db):
         con.execute('begin immediate')
         current=con.execute('select role,active from users where id=?',(actor['id'],)).fetchone()
         if not current or not current['active'] or current['role']!=actor['role']:raise Rejected('Учётная запись изменилась после предпросмотра')
+        version_plan=meta.get('versionPlan')
+        applied=assert_plan(con,meta,actor) if version_plan else False
         existing=db.import_exists(con,meta['signature'])
         # Always recheck current object rights, including before returning duplicate.
         for (site,) in stage.execute('select distinct site_id from rows'):
             if not accessible(con,actor,site) or not con.execute("select 1 from records where collection='sites' and id=?",(site,)).fetchone():
                 raise Rejected('Доступ к объекту изменился после предпросмотра')
+        if existing and version_plan and not applied:raise Rejected('Эта книга уже записана в другой операции; существующие версии не изменены')
         if existing:
             meta.update(status='done',duplicate=True,committed=0)
         else:
             maximum=int(os.getenv('KSU_DB_MAX_BYTES','0')) if db.backend=='sqlite' else 0
             used=con.execute('pragma page_count').fetchone()[0]*con.execute('pragma page_size').fetchone()[0] if db.backend=='sqlite' else 0
-            estimate=meta['normalizedBytes']*3+meta['accepted']*192+2*1024*1024
+            # A GROUP BY of the source JSON can spill whole rows to /tmp. Keep only
+            # short document keys on the bounded staging disk instead.
+            stage.execute('drop table if exists capacity_groups');stage.execute('create table capacity_groups(k text primary key)')
+            for site,encoded in stage.execute('select site_id,data from rows'):
+                stage.execute('insert or ignore into capacity_groups values(?)',(json.dumps([site,json.loads(encoded)['document']],ensure_ascii=False),))
+            groups=stage.execute('select count(*) from capacity_groups').fetchone()[0]
+            retired=stage.execute('select count(*) from previous where selected=1').fetchone()[0] if version_plan else 0
+            estimate=meta['normalizedBytes']*3+meta['accepted']*512+groups*4096+retired*256+2*1024*1024
+            meta['admissionEstimateBytes']=estimate;write_meta(folder,meta)
             if db.backend=='postgresql':db.check_capacity(con,estimate)
             if maximum and used+estimate>maximum:
                 raise Rejected('Недостаточно запаса в лимите SQLite для всего импорта; уменьшите диапазон или согласуйте перенос хранения')
+            if not version_plan:check_new_collisions(db,con,stage)
             data={k:meta[k] for k in ('sha256','name','signature','settings','mapping','processed','accepted','rejected','skipped','formulaCells','styles','date1904')}
             con.execute('insert into imports values(?,?,?,?)',(meta['signature'],actor['id'],json.dumps(data,ensure_ascii=False),now()))
+            created=now();seen=set()
+            target=begin_version(con,meta,actor,created,stage) if version_plan else None
             sheet=meta['sheets'][meta['settings']['sheet']]['name']
             for number,site,encoded in stage.execute('select number,site_id,data from rows order by number'):
                 # Main transaction is never committed in batches: any error rolls back rows, header and audit.
                 if con.execute('select 1 from decision_records where file_sha=? and sheet=? and source_row=?',(meta['sha256'],sheet,number)).fetchone():
                     raise CellError(number,'','Исходная строка уже импортирована','Выберите непересекающийся диапазон; новая запись целиком отменена')
                 try:
+                    record_id=uuid4().hex
                     con.execute('insert into decision_records values(?,?,?,?,?,?,?,?)',
-                        (uuid4().hex,meta['signature'],meta['sha256'],sheet,number,site,actor['id'],encoded))
+                        (record_id,meta['signature'],meta['sha256'],sheet,number,site,actor['id'],encoded))
+                    doc_id,version_id=target or initial_document(con,meta['signature'],site,json.loads(encoded),actor,created,seen)
+                    previous=stage.execute('select old_id from comparison where row_no=?',(number,)).fetchone()[0] if version_plan else None
+                    con.execute('insert into decision_entries values(?,?,?,?,?)',(record_id,doc_id,version_id,site,previous))
                 except (sqlite3.IntegrityError,psycopg.IntegrityError):
                     if db.backend=='postgresql':raise
                     if con.execute('select 1 from decision_records where file_sha=? and sheet=? and source_row=?',(meta['sha256'],sheet,number)).fetchone():
@@ -268,6 +287,9 @@ def worker_main(folder, action):
         db=Database(meta['database'])
         if action=='inspect':inspect(folder)
         elif action=='preview':preview(folder,db)
+        elif action=='version':
+            from .decision_versions import prepare
+            prepare(folder,db,meta['versionSettings'])
         elif action=='commit':commit(folder,db)
         else:raise Rejected('Неизвестная операция импорта')
     except Exception as error:
@@ -353,7 +375,7 @@ class Jobs:
     def start(self, ident, actor, action, settings=None):
         with self.guard:
             folder,meta=self.get(ident,actor)
-            allowed={'inspect':{'uploading'},'preview':{'uploaded','mapping','ready','invalid','error'},'commit':{'ready'}}
+            allowed={'inspect':{'uploading'},'preview':{'uploaded','mapping','ready','invalid','error'},'version':{'ready','error'},'commit':{'ready'}}
             if self.process is not None and self.process.poll() is None and (self.process_id!=ident or meta['status'] not in ('inspecting','checking','committing','uploading')):
                 try:self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:pass
@@ -361,9 +383,15 @@ class Jobs:
                 raise Rejected('Дождитесь текущей операции импорта')
             if self.active!=ident:raise Rejected('Начата другая загрузка; загрузите файл заново')
             if settings is not None:
-                meta['settings']=settings
-                meta.update(processed=0,accepted=0,rejected=0,rows=[],errors=[],missing=[],message='',warning='',formulaCells=0)
-            meta['status']={'inspect':'inspecting','preview':'checking','commit':'committing'}[action]
+                if action=='version':
+                    meta['versionSettings']=settings;meta['message']='';meta.pop('versionPlan',None);meta.pop('confirmedVersionToken',None)
+                else:
+                    meta['settings']=settings
+                    meta.update(processed=0,accepted=0,rejected=0,rows=[],errors=[],missing=[],message='',warning='',formulaCells=0)
+                    meta.pop('versionPlan',None);meta.pop('confirmedVersionToken',None)
+                    meta.pop('versionSettings',None)
+            meta['action']=action
+            meta['status']={'inspect':'inspecting','preview':'checking','version':'checking','commit':'committing'}[action]
             write_meta(folder,meta)
             log=(folder/'worker.log').open('wb')
             self.process=subprocess.Popen([sys.executable,'-m','server.decision_import',str(folder),action],
@@ -400,10 +428,15 @@ class Jobs:
             return meta
 
     def reconcile(self, meta, cancel=False):
+        if meta.get('action') not in (None,'commit'):
+            meta.update(status='cancelled' if cancel else 'error',message='Проверка прервана; запись версии не подтверждалась')
+            return meta
         signature=meta.get('signature')
         if signature:
             with self.db.connect(actor_for(self.db,meta['actor'])) as con:
                 imported=self.db.import_exists(con,signature)
+                if meta.get('versionPlan'):
+                    imported=bool(con.execute('select 1 from decision_versions where operation_key=?',(meta['versionPlan']['token'],)).fetchone())
                 count=con.execute('select count(*) from decision_records where import_hash=?',(signature,)).fetchone()[0]
             if imported:
                 meta.update(status='done',committed=count,warning='Завершённая транзакция подтверждена по журналу импорта')
