@@ -84,11 +84,14 @@ class Visit(Model):
     siteId: str
     date: date
     kind: Literal['inspection', 'followup', 'inventory', 'training'] = 'inspection'
-    assignee: str = Field(max_length=120)
+    assignee: str = Field(default='', max_length=120)
     assignedTo: str = 'inspector'
     goal: str = Field(default='', max_length=1200)
     status: Literal['planned', 'completed', 'cancelled'] = 'planned'
     inspectionId: str | None = None
+    cancellationReason: str = Field(default='', max_length=1200)
+    cancelledBy: str | None = None
+    cancelledAt: str | None = None
 
 
 MODELS = {'sites': Site, 'questions': Question, 'inspections': Inspection,

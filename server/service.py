@@ -37,6 +37,13 @@ def apply_changes(db, actor, batch):
                     fail('Запись повторяется в одном запросе')
                 seen.add(key)
                 save_record(con, actor, change.collection, change.id, change.data, change.expectedVersion)
+            # Completion is a plan-to-fact transition, not a reusable status shortcut.
+            new_inspections = {c.id for c in batch.changes if c.collection=='inspections' and c.expectedVersion==0}
+            for change in batch.changes:
+                if change.collection=='visits' and change.data.get('status')=='completed':
+                    visit=json.loads(get_record(con,'visits',change.id)['data'])
+                    if visit['inspectionId'] not in new_inspections:
+                        fail('Выполнить выезд можно только вместе с новым актом проверки',403)
             # All submitted inspection failures must have exactly one linked finding.
             for change in batch.changes:
                 if change.collection != 'inspections':
@@ -55,11 +62,21 @@ def save_record(con, actor, collection, ident, payload, expected_version):
     old = get_record(con,collection,ident)
     if old and not accessible(con,actor,old['site_id']) and collection not in ('sites','questions'):
         fail('Нет доступа к записи',403)
+    if old and collection=='visits':
+        previous_visit=json.loads(old['data'])
+        if actor['role']!='manager' and previous_visit['assignedTo']!=actor['id']:
+            fail('Можно изменять только назначенные вам выезды',403)
+        if previous_visit['status']!='planned':
+            fail('Завершённые и отменённые выезды неизменяемы',403)
     if (old['version'] if old else 0) != expected_version:
         fail('Запись изменена другим пользователем. Обновите данные и сравните изменения.',409)
     if old and collection=='inspections':
         fail('Завершённый акт неизменяем',403)
     raw = {k:v for k,v in payload.items() if k not in ('id','version','createdBy','createdAt','updatedAt')}
+    if collection=='visits' and actor['role']=='inspector':
+        if raw.get('assignedTo',actor['id'])!=actor['id']:
+            fail('Нельзя назначать выезд другому исполнителю',403)
+        raw['assignedTo']=actor['id']
     if raw.get('dueDate')=='':
         raw['dueDate']=None
     try:
@@ -139,12 +156,23 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         if not assignee or not accessible(con,dict(assignee),site):
             fail('Исполнителю не назначен объект')
         data['assignee']=assignee['name']
-        if actor['role']!='manager' and (not old or before['assignedTo']!=actor['id']):
-            fail('Планом управляет руководитель',403)
+        if not old and data['status']!='planned':
+            fail('Новый выезд должен быть запланирован',403)
+        if before and data['status']!='planned':
+            if any(data[k]!=before.get(k,'' if k=='goal' else None) for k in ('siteId','date','kind','assignedTo','goal')):
+                fail('Отмена и выполнение не меняют реквизиты плана',403)
+        if data['status']=='cancelled':
+            if not data['cancellationReason']:
+                fail('Укажите причину отмены выезда')
+            data['cancelledBy']=actor['id'];data['cancelledAt']=now()
+        elif data['cancellationReason'] or data['cancelledBy'] or data['cancelledAt']:
+            fail('Данные отмены допустимы только при отмене выезда',403)
         if data['status']=='completed':
             ins=get_record(con,'inspections',data['inspectionId'])
             if not ins or ins['site_id']!=site or ins['author_id']!=data['assignedTo']:
                 fail('Для выполнения нужен акт назначенного исполнителя на этом объекте')
+            if con.execute("select 1 from records where collection='visits' and id!=? and json_extract(data,'$.inspectionId')=?",(ident,data['inspectionId'])).fetchone():
+                fail('Этот акт уже связан с другим выездом',403)
         elif data['inspectionId']:
             fail('Акт можно связать только с выполненным выездом')
     stamp=now(); serialized=json.dumps(data,ensure_ascii=False,sort_keys=True)

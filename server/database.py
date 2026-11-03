@@ -31,6 +31,7 @@ def password_valid(password, encoded):
 
 SCHEMA = """
 pragma journal_mode=WAL;
+begin immediate;
 create table if not exists users(
  id text primary key, username text not null unique, name text not null,
  role text not null check(role in ('manager','inspector')), password text not null, active integer not null default 1);
@@ -52,15 +53,22 @@ create table if not exists mutations(user_id text references users(id), id text 
 create table if not exists media(id text primary key, site_id text not null, author_id text references users(id),
  content blob not null, thumbnail blob not null, created_at text not null);
 create table if not exists imports(hash text primary key, actor_id text not null, raw_json text not null, created_at text not null);
-create trigger if not exists guard_insert before insert on records begin
+-- Replace permissions atomically on existing pilot databases; never reseed records.
+drop trigger if exists guard_insert;
+drop trigger if exists guard_update;
+drop trigger if exists guard_visit_insert;
+drop trigger if exists guard_visit_update;
+drop trigger if exists log_insert;
+drop trigger if exists log_update;
+create trigger guard_insert before insert on records begin
  select case when actor_role() not in ('manager','inspector') then raise(abort,'forbidden') end;
  select case when new.author_id != actor_id() then raise(abort,'forbidden') end;
- select case when actor_role()='inspector' and (new.collection in ('sites','questions','visits') or
+ select case when actor_role()='inspector' and (new.collection in ('sites','questions') or
  not exists(select 1 from user_sites where user_id=actor_id() and site_id=new.site_id))
  then raise(abort,'forbidden') end;
  select case when new.collection='inventories' and json_extract(new.data,'$.stage')!='primary' then raise(abort,'forbidden') end;
 end;
-create trigger if not exists guard_update before update on records begin
+create trigger guard_update before update on records begin
  select case when actor_role() not in ('manager','inspector') or new.author_id!=old.author_id or
  new.collection!=old.collection or new.id!=old.id or new.created_at!=old.created_at or new.version!=old.version+1
  then raise(abort,'forbidden') end;
@@ -68,25 +76,73 @@ create trigger if not exists guard_update before update on records begin
  (json_extract(new.data,'$.stage')!=json_extract(old.data,'$.stage') or json_extract(new.data,'$.decision')!=json_extract(old.data,'$.decision'))
  then raise(abort,'forbidden') end;
  select case when actor_role()='inspector' and (
- new.collection in ('sites','questions','inspections') or new.site_id is not old.site_id or
+ new.collection in ('sites','questions','inspections') or (new.collection!='visits' and new.site_id is not old.site_id) or
  not exists(select 1 from user_sites where user_id=actor_id() and site_id=new.site_id) or
+ not exists(select 1 from user_sites where user_id=actor_id() and site_id=old.site_id) or
  (new.collection!='visits' and old.author_id!=actor_id()) or
- (new.collection='visits' and (json_extract(old.data,'$.assignedTo')!=actor_id() or
- json_extract(old.data,'$.status')!='planned' or json_extract(new.data,'$.status')!='completed' or
- json_remove(new.data,'$.status','$.inspectionId')!=json_remove(old.data,'$.status','$.inspectionId'))))
+ (new.collection='visits' and (json_extract(old.data,'$.assignedTo') is not actor_id() or
+ json_extract(new.data,'$.assignedTo') is not actor_id())))
+ then raise(abort,'forbidden') end;
+end;
+create trigger guard_visit_insert before insert on records when new.collection='visits' begin
+ select case when json_extract(new.data,'$.status') is not 'planned' or
+ json_extract(new.data,'$.siteId') is not new.site_id or
+ json_extract(new.data,'$.inspectionId') is not null or
+ coalesce(json_extract(new.data,'$.cancellationReason'),'')!='' or
+ json_extract(new.data,'$.cancelledBy') is not null or json_extract(new.data,'$.cancelledAt') is not null or
+ (actor_role()='inspector' and json_extract(new.data,'$.assignedTo') is not actor_id()) or
+ not exists(select 1 from users u where u.id=json_extract(new.data,'$.assignedTo') and u.active=1 and
+ (u.role='manager' or exists(select 1 from user_sites us where us.user_id=u.id and us.site_id=new.site_id)))
+ then raise(abort,'forbidden') end;
+end;
+create trigger guard_visit_update before update on records when new.collection='visits' begin
+ select case when json_extract(old.data,'$.status') is not 'planned' or
+ json_extract(new.data,'$.status') not in ('planned','completed','cancelled') or
+ json_extract(new.data,'$.status') is null or json_extract(new.data,'$.siteId') is not new.site_id or
+ not exists(select 1 from users u where u.id=json_extract(new.data,'$.assignedTo') and u.active=1 and
+ (u.role='manager' or exists(select 1 from user_sites us where us.user_id=u.id and us.site_id=new.site_id)))
+ then raise(abort,'forbidden') end;
+ select case when json_extract(new.data,'$.status')!='planned' and (
+ json_extract(new.data,'$.date') is not json_extract(old.data,'$.date') or
+ new.site_id is not old.site_id or
+ json_extract(new.data,'$.kind') is not json_extract(old.data,'$.kind') or
+ json_extract(new.data,'$.assignedTo') is not json_extract(old.data,'$.assignedTo') or
+ coalesce(json_extract(new.data,'$.goal'),'')!=coalesce(json_extract(old.data,'$.goal'),''))
+ then raise(abort,'forbidden') end;
+ select case when json_extract(new.data,'$.status')='cancelled' and (
+ length(trim(coalesce(json_extract(new.data,'$.cancellationReason'),''))) not between 1 and 1200 or
+ json_extract(new.data,'$.cancelledBy') is not actor_id() or
+ length(coalesce(json_extract(new.data,'$.cancelledAt'),''))=0)
+ then raise(abort,'forbidden') end;
+ select case when json_extract(new.data,'$.status')!='cancelled' and (
+ coalesce(json_extract(new.data,'$.cancellationReason'),'')!='' or
+ json_extract(new.data,'$.cancelledBy') is not null or json_extract(new.data,'$.cancelledAt') is not null)
+ then raise(abort,'forbidden') end;
+ select case when json_extract(new.data,'$.status')='completed' and (
+ not exists(select 1 from records ins where ins.collection='inspections' and
+ ins.id=json_extract(new.data,'$.inspectionId') and ins.site_id=new.site_id and
+ ins.author_id=json_extract(new.data,'$.assignedTo')) or
+ exists(select 1 from records v where v.collection='visits' and v.id!=new.id and
+ json_extract(v.data,'$.inspectionId')=json_extract(new.data,'$.inspectionId')))
+ then raise(abort,'forbidden') end;
+ select case when json_extract(new.data,'$.status')!='completed' and json_extract(new.data,'$.inspectionId') is not null
  then raise(abort,'forbidden') end;
 end;
 create trigger if not exists no_record_delete before delete on records begin select raise(abort,'deletion disabled'); end;
 create trigger if not exists log_insert after insert on records begin
  insert into audit(at,actor_id,collection,record_id,operation,after_json)
- values(new.updated_at,actor_id(),new.collection,new.id,'create',new.data);
+ values(new.updated_at,actor_id(),new.collection,new.id,'create',
+ case when new.collection='visits' then json_set(new.data,'$.version',new.version) else new.data end);
 end;
 create trigger if not exists log_update after update on records begin
  insert into audit(at,actor_id,collection,record_id,operation,before_json,after_json)
- values(new.updated_at,actor_id(),new.collection,new.id,'update',old.data,new.data);
+ values(new.updated_at,actor_id(),new.collection,new.id,'update',
+ case when new.collection='visits' then json_set(old.data,'$.version',old.version) else old.data end,
+ case when new.collection='visits' then json_set(new.data,'$.version',new.version) else new.data end);
 end;
 create trigger if not exists audit_no_update before update on audit begin select raise(abort,'append only'); end;
 create trigger if not exists audit_no_delete before delete on audit begin select raise(abort,'append only'); end;
+commit;
 """
 
 
@@ -142,6 +198,12 @@ class Database:
                                    if item['id'].startswith(prefix) and item['id'][1:].isdigit()
                                    else (1,item['createdAt']))
         state['meta'] = {'mode':'demo', 'name':'ИНСТРАКТ · КСУ Контроль'}
+        state['assignees'] = [
+            {'id':u['id'],'name':u['name'], 'siteIds':
+             [s['id'] for s in state['sites']] if u['role']=='manager' else
+             [r[0] for r in con.execute('select site_id from user_sites where user_id=?',(u['id'],))]}
+            for u in con.execute('select id,name,role from users where active=1 order by name')
+        ] if actor['role']=='manager' else []
         state['activities'] = []
         state['version'] = 2
         state['revision'] = con.execute('select coalesce(max(seq),0) from audit').fetchone()[0]

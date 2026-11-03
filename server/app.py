@@ -174,8 +174,9 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect(actor) as con:
             records=con.execute('''select a.* from audit a join records r on r.collection=a.collection and r.id=a.record_id
                 where a.seq<? and (?='' or a.collection=?) and (?='' or a.record_id=?)
-                and (?='manager' or (r.author_id=? and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
-                order by a.seq desc limit 100''',(before,collection,collection,record_id,record_id,actor['role'],actor['id'],actor['id'])).fetchall()
+                and (?='manager' or ((r.author_id=? or (r.collection='visits' and json_extract(r.data,'$.assignedTo')=?))
+                and exists(select 1 from user_sites us where us.user_id=? and us.site_id=r.site_id)))
+                order by a.seq desc limit 100''',(before,collection,collection,record_id,record_id,actor['role'],actor['id'],actor['id'],actor['id'])).fetchall()
             names={r['id']:r['name'] for r in con.execute('select id,name from users')}
             return [{**dict(r),'actor':names.get(r['actor_id'],'Система'),
                      'before':json.loads(r['before_json']) if r['before_json'] else None,

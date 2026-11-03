@@ -70,7 +70,7 @@ def run(full=False):
                 form.locator('[name="goal"]').fill('ДЕМО · Контроль маркировки')
                 m.locator('[data-action="save-visit"]').click();saved(m)
                 nav(i,'schedule');expect(i.get_by_text('ДЕМО · Контроль маркировки')).to_be_visible(timeout=8000)
-                assert i.locator('[data-action="add-visit"]').count()==0
+                assert i.locator('[data-action="add-visit"]').count()==1
                 i.locator('[data-action="start-audit"][data-visit]').click()
                 assert i.locator('.question-card').count()==22
                 for button in i.locator('button[data-answer][data-value="ok"]').all():button.click()
