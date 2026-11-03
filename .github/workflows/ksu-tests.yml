@@ -2,7 +2,7 @@ name: KSU server tests
 
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions]
   push:
     branches: [main]
 
@@ -50,12 +50,14 @@ jobs:
           python decisions_flow_test.py 2>&1 | tee decisions-results.txt
           python calendar_flow_test.py 2>&1 | tee calendar-results.txt
           python decision_versions_flow_test.py 2>&1 | tee decision-versions-results.txt
+          python writeoff_analytics_flow_test.py 2>&1 | tee writeoff-analytics-results.txt
       - name: Check JavaScript syntax
         run: |
           node --check app.js
           node --check sync.js
           node --check decisions.js
           node --check calendar.js
+          node --check writeoff_analytics.js
 
       - name: Upload synthetic acceptance results
         if: always()
@@ -69,6 +71,7 @@ jobs:
             /tmp/ksu_mobile.png
             /tmp/ksu_calendar_*.png
             /tmp/ksu_versions_*.png
+            /tmp/ksu_analytics_*.png
 
   amvera-container:
     runs-on: ubuntu-latest

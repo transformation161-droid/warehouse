@@ -1,7 +1,7 @@
 name: PostgreSQL large registry acceptance
 on:
   pull_request:
-    branches: [main, feat/issue-9-postgresql, test/issue-20-postgres-large-registry]
+    branches: [main, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions]
 permissions:
   contents: read
 defaults:

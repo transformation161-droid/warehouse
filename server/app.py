@@ -494,10 +494,12 @@ def create_app(path=None, origin=None, secure=None):
         return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="ksu-demo-{report["kind"]}.{extension}"'})
 
     # Only explicit public assets; never serve database, backups, SQL, tests or source directories.
+    from .writeoff_analytics import install as install_writeoff_analytics
+    install_writeoff_analytics(app,db,auth)
     def make_asset(filename):
         def asset():
             return FileResponse(ROOT/filename)
         return asset
-    for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     return app
