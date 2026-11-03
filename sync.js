@@ -61,13 +61,42 @@ render=function(){
   const note=document.createElement('div');note.id='sync-status';note.className='sync-status no-print';note.setAttribute('role','status');
   note.innerHTML=pending?`<strong>${sending?'Сохраняем…':'Изменения ещё не подтверждены сервером'}</strong> <button class="btn secondary" data-action="retry-save">Повторить</button><button class="btn secondary" data-action="recover-save">Скачать копию</button><button class="btn secondary" data-action="discard-save">Отменить отправку</button>`:connected?'Общая база · синхронизировано':'Нет связи · редактирование доступно с сохранением запроса для повторной отправки';
   $('.workspace').prepend(note);
-  if(ui.role!=='manager')document.querySelectorAll('[data-action="add-site"],[data-action="edit-site"],[data-action="add-question"],[data-action="add-visit"],[data-action="edit-visit"],[data-action="cancel-visit"],[data-action="change-stage"]').forEach(x=>x.remove());
+  if(ui.role!=='manager')document.querySelectorAll('[data-action="add-site"],[data-action="edit-site"],[data-action="add-question"],[data-action="change-stage"]').forEach(x=>x.remove());
+  document.querySelectorAll('[data-action="edit-visit"],[data-action="cancel-visit"]').forEach(x=>{if(!canEditVisit(db.visits.find(v=>v.id===x.dataset.id)))x.remove()});
+  document.querySelectorAll('[data-visit-id]').forEach(row=>row.querySelector('.actions-row').insertAdjacentHTML('beforeend',`<button class="link" data-action="history" data-collection="visits" data-id="${attr(row.dataset.visitId)}">История</button>`));
+  if(!db.sites.length)document.querySelectorAll('[data-action="add-visit"]').forEach(x=>x.disabled=true);
   document.querySelectorAll('[data-action="start-audit"][data-visit]').forEach(x=>{if(db.visits.find(v=>v.id===x.dataset.visit)?.assignedTo!==sessionUser.id)x.remove()});
   document.querySelectorAll('[data-action="finding-detail"]').forEach(x=>{const f=db.findings.find(f=>f.id===x.dataset.id);if(ui.role!=='manager'&&f?.createdBy!==sessionUser.id)x.textContent='Просмотр'});
   if(ui.page==='reports'){
     const actions=$('.page-actions');actions.insertAdjacentHTML('beforeend','<button class="btn secondary" data-action="report-xlsx">XLSX</button><button class="btn secondary" data-action="report-pdf">Скачать PDF</button>');
   }
 };
+
+function canEditVisit(visit){return !!visit&&visit.status==='planned'&&(sessionUser.role==='manager'||visit.assignedTo===sessionUser.id)}
+const baseVisitForm=visitForm;
+visitForm=function(id){
+ const visit=id?db.visits.find(v=>v.id===id):null;
+ if(id&&!canEditVisit(visit))return toast('Этот выезд недоступен для изменения',true);
+ if(!db.sites.length)return toast('Нет доступных объектов для планирования',true);
+ baseVisitForm(id);
+ const form=$('#visit-form'),field=form.elements.assignee.closest('.field');
+ if(sessionUser.role==='inspector'){
+   form.elements.assignee.value=sessionUser.name;
+   field.insertAdjacentHTML('beforeend',`<input type="hidden" name="assignedTo" value="${attr(sessionUser.id)}">`);
+ }else{
+   field.innerHTML='<label>Исполнитель *</label><select name="assignedTo" required></select>';
+   const select=form.elements.assignedTo;
+   const refresh=()=>{
+     const selected=select.value||visit?.assignedTo||'inspector';
+     const people=(db.assignees||[]).filter(person=>person.siteIds.includes(form.elements.siteId.value));
+     select.innerHTML='<option value="">Выберите исполнителя</option>'+people.map(person=>`<option value="${attr(person.id)}">${esc(person.name)}</option>`).join('');
+     select.value=people.some(person=>person.id===selected)?selected:'';
+   };
+   form.elements.siteId.addEventListener('change',refresh);refresh();
+ }
+};
+const baseChangeVisitStatus=changeVisitStatus;
+changeVisitStatus=function(id,status){if(!canEditVisit(db.visits.find(v=>v.id===id)))return toast('Этот выезд недоступен для отмены',true);baseChangeVisitStatus(id,status)};
 
 async function uploadPhoto(photo,siteId){
   if(!photo?.startsWith('data:'))return photo||'';
@@ -158,7 +187,7 @@ inventoryDetail=function(id){
 async function showHistory(collection='',id=''){
   try{
     const entries=await api('history?'+new URLSearchParams({collection,record_id:id}));
-    openModal(entries.map(entry=>`<article class="timeline-item"><strong>${esc(entry.actor)} · ${esc(entry.operation==='create'?'Создание':'Изменение')} · ${esc(entry.collection)}</strong><small>${esc(entry.at)} UTC · ${esc(entry.record_id)}</small><details><summary>Исходные и новые значения</summary><pre>${esc(JSON.stringify({до:entry.before,после:entry.after},null,2))}</pre></details></article>`).join('')||empty('Изменений нет'),'Журнал изменений','Последние 100 событий. Более ранние события доступны через API с параметром before.',true,'<button class="btn primary" data-action="close-modal">Закрыть</button>');
+    openModal(entries.map(entry=>`<article class="timeline-item"><strong>${esc(entry.actor)} · ${esc(entry.operation==='create'?'Создание':entry.operation==='import'?'Импорт':'Изменение')} · ${esc(entry.collection)}</strong><small>${esc(entry.at)} UTC · ${esc(entry.record_id)}</small><details><summary>Исходные и новые значения</summary><pre>${esc(JSON.stringify({до:entry.before,после:entry.after},null,2))}</pre></details></article>`).join('')||empty('Изменений нет'),'Журнал изменений','Последние 100 событий. Более ранние события доступны через API с параметром before.',true,'<button class="btn primary" data-action="close-modal">Закрыть</button>');
   }catch(error){toast(error.message,true)}
 }
 

@@ -207,7 +207,6 @@ class API(unittest.TestCase):
 
     def test_visit_and_inspection_atomic_flow(self):
         visit={'siteId':'s1','date':date.today().isoformat(),'assignee':'ДЕМО','assignedTo':'inspector'}
-        self.assertEqual(self.change(self.inspector,'visits',visit).status_code,403)
         self.assertEqual(self.change(self.manager,'visits',visit,'visit1').status_code,200)
         state=self.state(self.inspector)
         results=[{'questionId':q['id'],'status':'ok'} for q in state['questions']]

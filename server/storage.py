@@ -12,10 +12,16 @@ def directory_bytes(path):
     total=0
     with os.scandir(path) as entries:
         for entry in entries:
-            if entry.is_symlink():
-                raise StorageFull('Unexpected symbolic link in the data directory')
-            if entry.is_dir(follow_symlinks=False):total+=directory_bytes(entry.path)
-            elif entry.is_file(follow_symlinks=False):total+=entry.stat(follow_symlinks=False).st_size
+            try:
+                if entry.is_symlink():
+                    raise StorageFull('Unexpected symbolic link in the data directory')
+                if entry.is_dir(follow_symlinks=False):total+=directory_bytes(entry.path)
+                elif entry.is_file(follow_symlinks=False):total+=entry.stat(follow_symlinks=False).st_size
+            except FileNotFoundError:
+                # SQLite may remove WAL/SHM files, and import workers may remove staging
+                # files, between scandir and stat. A vanished entry occupies no space.
+                # Other IO errors and unexpected symlinks must still fail closed.
+                continue
     return total
 
 

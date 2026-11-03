@@ -84,11 +84,14 @@ class Visit(Model):
     siteId: str
     date: date
     kind: Literal['inspection', 'followup', 'inventory', 'training'] = 'inspection'
-    assignee: str = Field(max_length=120)
+    assignee: str = Field(default='', max_length=120)
     assignedTo: str = 'inspector'
     goal: str = Field(default='', max_length=1200)
     status: Literal['planned', 'completed', 'cancelled'] = 'planned'
     inspectionId: str | None = None
+    cancellationReason: str = Field(default='', max_length=1200)
+    cancelledBy: str | None = None
+    cancelledAt: str | None = None
 
 
 MODELS = {'sites': Site, 'questions': Question, 'inspections': Inspection,
@@ -117,6 +120,15 @@ class ImportFile(Model):
     name: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=4_100_000)
     mapping: dict[str, str] | None = None
+
+
+class DecisionPreview(Model):
+    sheet: int = Field(default=0, ge=0, le=19)
+    headerRow: int = Field(default=1, ge=1, le=99999)
+    firstRow: int = Field(default=2, ge=2, le=100000)
+    lastRow: int = Field(default=100000, ge=2, le=100000)
+    mapping: dict[str, str] = Field(default_factory=dict, max_length=17)
+    allowCached: bool = False
 
 
 class MediaFile(Model):
