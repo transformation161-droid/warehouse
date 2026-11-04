@@ -86,8 +86,9 @@ def run(output):
     os.environ['KSU_WORK_DIR']=str(root/'fixture-work')
     spec=importlib.util.spec_from_file_location('server.prerelease_baseline','/baseline/server/writeoff_analytics.py')
     before=importlib.util.module_from_spec(spec);sys.modules[spec.name]=before;spec.loader.exec_module(before)
-    modules={'before':before,'after':after};resources=Resources(root);case=None;result={'base_commit':BASE,'synthetic_only':True,'resources_unchanged':True,'rows':24000,'samples_per_cohort':30,
-      'protocol':'Same physical PostgreSQL facts, roles and limits. First-open samples restart the API each time with fixed fresh-import statistics. Warm samples use ANALYZE once and one running API. No OS/page-cache flush is claimed. Autovacuum is disabled only on private fixture tables to keep statistics comparable; production configuration is unchanged.',
+    restart_each=os.getenv('KSU_PRERELEASE_BLOCK_RESTARTS')!='1'
+    modules={'before':before,'after':after};resources=Resources(root);case=None;result={'base_commit':BASE,'synthetic_only':True,'resources_unchanged':True,'rows':24000,'samples_per_cohort':30,'restart_each_request':restart_each,
+      'protocol':'Same physical PostgreSQL facts, roles and limits. Fresh-import statistics stay fixed throughout the first cohort. API restart: '+('each first-open request' if restart_each else 'each five-request block for both revisions; no result cache exists')+'. Warm samples use ANALYZE once. No OS/page-cache flush is claimed. Autovacuum is disabled only on private fixture tables to keep statistics comparable; production configuration is unchanged.',
       'before':{},'after':{}}
     try:
         case=Case(root,'source',resources);db=Database(case.runtime);actor=db.user('manager')
@@ -121,7 +122,7 @@ def run(output):
                 for variant in (('before','after') if block%2==0 else ('after','before')):
                     case.mark(phase+':'+variant);switch(variant)
                     for index in range(5):
-                        if phase=='first_open' and index:switch(variant)
+                        if phase=='first_open' and index and restart_each:switch(variant)
                         start=time.perf_counter();response=case.clients['manager'].get('/api/writeoff-analytics',params={'limit':25},timeout=30);data=require(response)
                         assert data['definitions']['quantity']['label']==('Единицы по источнику' if variant=='before' else 'Количество по источнику'),'Wrong source revision served'
                         elapsed=round(time.perf_counter()-start,6);samples[variant].append(elapsed);server_elapsed[variant].append(data['elapsedSeconds']);verify(data)

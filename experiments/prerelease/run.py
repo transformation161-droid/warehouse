@@ -10,7 +10,7 @@ from tests.pg_environment import local_cluster,docker,test_environment,DOCKER,DO
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--image',default='ksu-postgres:test');parser.add_argument('--output',required=True);parser.add_argument('--baseline-source',required=True)
+    parser=argparse.ArgumentParser();parser.add_argument('--image',default='ksu-postgres:test');parser.add_argument('--output',required=True);parser.add_argument('--baseline-source',required=True);parser.add_argument('--block-restarts',action='store_true')
     args=parser.parse_args();output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=True);output.chmod(0o770)
     with local_cluster() as cluster:
         env=test_environment(cluster,container=True);env['KSU_PG_DATABASE_MAX_BYTES']='268435456';env['KSU_DATA_MAX_BYTES']='2147483648'
@@ -33,7 +33,7 @@ def main():
                 result=docker('run','--name',app_name,'--network',cluster['network'],'--user','1000:1000','--group-add',str(os.getgid()),
                     '--cpus','0.5','--memory','1g','--memory-swap','1g','--pids-limit','128','--read-only','--tmpfs','/tmp:rw,nosuid,nodev,size=32m',
                     '--env-file',str(private),'-v',str(Path(args.baseline_source).resolve())+':/baseline:ro','-v',str(Path.cwd())+':/source:ro','-v',str(output)+':/out:rw',
-                    '-v',str(cluster['pki']/'cert.pem')+':/certs/cert.pem:ro','-e','PYTHONPATH=/source','-e','KSU_TEST_DATA_DIR=/out','-w','/source',
+                    '-v',str(cluster['pki']/'cert.pem')+':/certs/cert.pem:ro','-e','PYTHONPATH=/source','-e','KSU_TEST_DATA_DIR=/out',*(['-e','KSU_PRERELEASE_BLOCK_RESTARTS=1'] if args.block_restarts else []),'-w','/source',
                     args.image,'python','-m','experiments.prerelease.acceptance','/out/prerelease-metrics.json',stdout=log,stderr=log,check=False)
             if result.returncode:raise RuntimeError('PostgreSQL large acceptance failed: '+str(result.returncode))
         finally:
