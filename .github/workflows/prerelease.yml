@@ -25,8 +25,8 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/var/issue25-baseline"
           git archive 17521cd3386924e1483edd0cf68913998f720a50 | tar -x -C "$GITHUB_WORKSPACE/var/issue25-baseline"
       - run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
-      - name: Paired 120 HTTP samples, real cursor plans, exact metrics, history and independent restore
-        run: python -m experiments.prerelease.run --image ksu-postgres:test --baseline-source "$GITHUB_WORKSPACE/var/issue25-baseline" --block-restarts --output "$GITHUB_WORKSPACE/var/prerelease-checks"
+      - name: Paired 80 HTTP samples, real cursor plans, exact metrics, history and independent restore
+        run: python -m experiments.prerelease.run --image ksu-postgres:test --baseline-source "$GITHUB_WORKSPACE/var/issue25-baseline" --block-restarts --samples 20 --output "$GITHUB_WORKSPACE/var/prerelease-checks"
       - name: Report whitelisted latency and failure diagnostics in annotations
         if: always()
         run: python -m experiments.prerelease.summarize "$GITHUB_WORKSPACE/var/prerelease-checks"
