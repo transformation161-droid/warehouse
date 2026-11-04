@@ -1,0 +1,41 @@
+         3164779 function calls (3163909 primitive calls) in 3.287 seconds
+
+   Ordered by: cumulative time
+   List reduced from 605 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      2/1    0.112    0.056    3.089    3.089 /baseline/server/writeoff_analytics.py:189(aggregate)
+24002/24001    0.202    0.000    2.749    0.000 /baseline/server/writeoff_analytics.py:99(iter_facts)
+24209/24003    0.006    0.000    1.961    0.000 {built-in method builtins.next}
+    24001    0.014    0.000    1.923    0.000 /source/experiments/prerelease/acceptance.py:46(iterate)
+    24001    0.010    0.000    1.728    0.000 /source/server/postgres_backend.py:44(stream)
+    24001    0.010    0.000    1.712    0.000 /usr/local/lib/python3.12/site-packages/psycopg/_server_cursor.py:131(__iter__)
+      383    1.573    0.004    1.677    0.004 /usr/local/lib/python3.12/site-packages/psycopg/connection.py:445(wait)
+   144000    0.230    0.000    0.278    0.000 /baseline/server/writeoff_analytics.py:157(add)
+   120000    0.150    0.000    0.261    0.000 /baseline/server/writeoff_analytics.py:89(number)
+    24000    0.030    0.000    0.190    0.000 /usr/local/lib/python3.12/json/__init__.py:299(loads)
+        7    0.000    0.000    0.170    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:1036(get)
+        7    0.000    0.000    0.170    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:771(request)
+        7    0.000    0.000    0.168    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:879(send)
+        7    0.000    0.000    0.166    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:930(_send_handling_auth)
+        7    0.000    0.000    0.166    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:964(_send_handling_redirects)
+        7    0.002    0.000    0.166    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:1001(_send_single_request)
+    24000    0.020    0.000    0.130    0.000 /baseline/server/writeoff_analytics.py:176(snapshot_update)
+    24000    0.018    0.000    0.121    0.000 /source/experiments/prerelease/acceptance.py:53(timed_decode)
+        7    0.000    0.000    0.118    0.017 /usr/local/lib/python3.12/site-packages/httpx/_transports/default.py:230(handle_request)
+        7    0.003    0.000    0.118    0.017 /usr/local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py:199(handle_request)
+     3002    0.031    0.000    0.105    0.000 /usr/local/lib/python3.12/site-packages/psycopg/_server_cursor_base.py:157(_fetch_gen)
+    24001    0.025    0.000    0.098    0.000 /usr/local/lib/python3.12/json/__init__.py:183(dumps)
+    24000    0.024    0.000    0.097    0.000 /usr/local/lib/python3.12/json/decoder.py:333(decode)
+    24000    0.051    0.000    0.092    0.000 /baseline/server/writeoff_analytics.py:134(matches)
+   101924    0.038    0.000    0.072    0.000 {method 'as_tuple' of 'decimal.Decimal' objects}
+    24001    0.018    0.000    0.067    0.000 /usr/local/lib/python3.12/json/encoder.py:183(encode)
+   144000    0.035    0.000    0.060    0.000 /baseline/server/writeoff_analytics.py:86(category)
+        2    0.000    0.000    0.059    0.029 /source/server/postgres_backend.py:73(connect)
+       96    0.000    0.000    0.059    0.001 /usr/local/lib/python3.12/contextlib.py:132(__enter__)
+        1    0.000    0.000    0.058    0.058 /usr/local/lib/python3.12/site-packages/psycopg/connection.py:79(connect)
+        1    0.000    0.000    0.055    0.055 /usr/local/lib/python3.12/site-packages/psycopg/waiting.py:92(wait_conn)
+    24000    0.053    0.000    0.053    0.000 /usr/local/lib/python3.12/json/decoder.py:344(raw_decode)
+     3008    0.037    0.000    0.052    0.000 /usr/local/lib/python3.12/site-packages/psycopg/_connection_base.py:441(_exec_command)
+        8    0.000    0.000    0.051    0.006 /usr/local/lib/python3.12/selectors.py:451(select)
+        8    0.051    0.006    0.051    0.006 {method 'poll' of 'select.epoll' objects}

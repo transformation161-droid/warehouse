@@ -3,6 +3,8 @@ import csv
 from decimal import Decimal
 import io
 import os
+import json
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -55,6 +57,12 @@ def run():
                     nav(m,'writeoff-analytics');ready(m)
                     expect(m.locator('[data-wa-kpi]')).to_have_count(8);expect(m.locator('[data-wa-chart]')).to_have_count(6)
                     expect(m.locator('.wa-provisional')).to_contain_text('Не официальная отчётность')
+                    expect(m.locator('#wa-start')).to_be_visible();expect(m.locator('#wa-site')).to_be_visible()
+                    expect(m.locator('[data-wa-kpi="quantity"]')).to_contain_text('Единицы неоднородны')
+                    expect(m.locator('[data-wa-kpi="quantity"] .wa-quantity')).to_have_attribute('aria-label','104,000013')
+                    expect(m.locator('[data-wa-kpi="quantity"] .wa-fraction')).to_have_text(',000\u202f013')
+                    ui_samples=m.evaluate('''async()=>{const values=[];for(let i=0;i<10;i++){const start=performance.now();render();const html=performance.now()-start;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));values.push({html_ms:html,through_two_frames_ms:performance.now()-start})}return values}''')
+                    Path('/tmp/ksu_prerelease_ui.json').write_text(json.dumps({'synthetic_only':True,'backend':'postgresql' if os.getenv('KSU_DATABASE_URL') else 'sqlite','visible_rows':25,'fixture_active_rows':65,'samples':ui_samples},indent=2)+'\n')
                     m.screenshot(path='/tmp/ksu_analytics_desktop.png',full_page=True)
                     m.locator('.wa-filter-panel').evaluate('(element)=>element.open=false')
                     m.set_viewport_size({'width':1440,'height':1400})
@@ -73,7 +81,28 @@ def run():
                         if spec=='rows.csv':assert len(list(csv.reader(io.StringIO(raw.decode('utf-8-sig')),delimiter=';')))-1==len(selected)
                         if spec=='rows.xlsx':
                             book=load_workbook(io.BytesIO(raw),read_only=True);assert len(list(book.worksheets[0].values))-1==len(selected);book.close()
+                    # One continuous user path: period/object -> chart -> source -> current composition.
+                    m.locator('#wa-start').fill('2026-02-01');m.locator('#wa-end').fill('2026-04-30')
+                    m.locator('#wa-filters button[type="submit"]').click();ready(m)
+                    period_rows=[r for r in selected if r['date'] and '2026-02-01'<=r['date']<='2026-04-30']
+                    assert m.evaluate('waView.data.totalRows')==len(period_rows)
+                    m.locator('[data-wa-group="months"]').first.click();ready(m)
+                    m.locator('[data-action="decision-detail"]:visible').first.click();expect(m.get_by_role('dialog')).to_contain_text('ДЕМО')
+                    m.locator('[data-action="close-modal"]').first.click();m.locator('[data-wa-versions]:visible').first.click()
+                    m.locator('[data-wa-show-version][data-wa-current="true"]').click()
+                    expect(m.locator('.decision-totals')).to_contain_text('Действующие итоги');assert m.evaluate('decisionView.version')==0
+                    nav(m,'writeoff-analytics');ready(m)
+                    m.locator('[data-wa-clear="month"]').click();ready(m);assert not m.evaluate('waView.filters.month')
+                    m.locator('[data-wa-clear="period"]').click();ready(m);assert m.evaluate('waView.data.totalRows')==len(selected)
                     m.locator('[data-wa-action="reset"]').click();ready(m)
+                    m.locator('[data-wa-action="fractional"]').click();ready(m)
+                    assert m.evaluate('waView.data.totalRows')==13
+                    assert all(Decimal(r['quantity'])%1 for r in m.evaluate('waView.data.rows'))
+                    m.locator('[data-wa-clear="metric"]').click();ready(m)
+                    m.locator('[data-wa-action="reports"]').click()
+                    expect(m.locator('.workspace')).to_contain_text('Проверки, нарушения и первичные расхождения')
+                    expect(m.locator('.nav-item[data-nav="reports"]')).to_have_text('Операционные отчёты')
+                    nav(m,'writeoff-analytics');ready(m)
                     m.locator('[data-wa-group="months"]').first.click();ready(m);assert m.evaluate('waView.filters.month')
                     m.locator('[data-wa-action="reset"]').click();ready(m)
                     m.locator('[data-wa-missing-metric="residual"]').click();ready(m)
@@ -88,6 +117,7 @@ def run():
                     m.locator('[data-wa-show-version="1"]').click();expect(m.locator('.decision-totals')).to_contain_text('Стоимость, ₽: 10')
                     nav(m,'writeoff-analytics');ready(m);m.locator('[data-wa-action="reset"]').click();ready(m)
                     m.set_viewport_size({'width':390,'height':844});m.locator('.wa-filter-panel').evaluate('(element)=>element.open=false')
+                    expect(m.locator('#wa-start')).to_be_visible();expect(m.locator('#wa-site')).to_be_visible()
                     m.screenshot(path='/tmp/ksu_analytics_mobile.png',full_page=True,animations='disabled')
                     m.locator('.wa-kpis').evaluate('(el)=>window.scrollTo(0,el.getBoundingClientRect().top+window.scrollY-80)')
                     m.screenshot(path='/tmp/ksu_analytics_mobile_overview.png',animations='disabled')
@@ -106,8 +136,21 @@ def run():
                     # Client cannot broaden scope by constructing a request.
                     assert i.evaluate("async()=> (await (await fetch('/api/writeoff-analytics?site=s2')).json()).totalRows")==0
                     expect(i.locator('[data-wa-action="registry"]')).to_be_visible()
+                    # A backend failure and an actual aborted fetch cannot leave an endless spinner.
+                    pattern=re.compile(r'/api/writeoff-analytics\?')
+                    m.route(pattern,lambda route:route.fulfill(status=503,content_type='application/json',body='{"detail":"ДЕМО · Сервер временно недоступен"}'))
+                    m.evaluate('()=>{waView.data=null;void waLoad()}')
+                    expect(m.locator('.wa-status')).to_contain_text('Сервер временно недоступен')
+                    expect(m.get_by_role('button',name='Повторить загрузку')).to_be_visible();m.unroute(pattern)
+                    m.get_by_role('button',name='Повторить загрузку').click();ready(m)
+                    m.clock.install();held=[];m.route(pattern,lambda route:held.append(route))
+                    m.evaluate('()=>{waView.data=null;void waLoad()}');expect(m.locator('.wa-status')).to_contain_text('Загрузка')
+                    m.clock.fast_forward(31000);expect(m.locator('.wa-status')).to_contain_text('не загрузился за 30 секунд')
+                    assert m.evaluate('waView.loading') is False
+                    for route in held:route.abort()
+                    m.unroute(pattern)
                     assert not errors,errors;browser.close()
-                print('PASS: desktop/390/320px analytics, synchronized filters/KPIs/charts/rows, exact four downloads, current12/history10, scoped inspector, no JS errors')
+                print('PASS: desktop/390/320px, primary filters, period/object/chart/source/current/history, exact quantity/fractional review, four downloads, scoped rights, UI timing, failure/retry/30s timeout; no JS errors')
             except Exception:
                 log.flush();log.seek(0);print(log.read()[-2000:]);raise
             finally:process.terminate();process.wait(timeout=15)

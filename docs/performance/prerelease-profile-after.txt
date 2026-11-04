@@ -1,0 +1,41 @@
+         2759193 function calls (2758276 primitive calls) in 4.005 seconds
+
+   Ordered by: cumulative time
+   List reduced from 610 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+24003/24001    0.255    0.000    3.603    0.000 /source/server/writeoff_analytics.py:107(iter_facts)
+      176    0.119    0.001    3.257    0.019 /usr/local/lib/python3.12/pathlib.py:1097(rglob)
+24002/24001    0.174    0.000    2.637    0.000 /source/experiments/prerelease/acceptance.py:46(iterate)
+24213/24003    0.006    0.000    2.441    0.000 {built-in method builtins.next}
+       15    0.000    0.000    1.414    0.094 /usr/local/lib/python3.12/threading.py:637(wait)
+       15    0.133    0.009    1.414    0.094 /usr/local/lib/python3.12/threading.py:323(wait)
+24002/24001    0.009    0.000    0.898    0.000 /source/server/postgres_backend.py:44(stream)
+24002/24001    0.008    0.000    0.886    0.000 /usr/local/lib/python3.12/site-packages/psycopg/_server_cursor.py:131(__iter__)
+      384    0.710    0.002    0.791    0.002 /usr/local/lib/python3.12/site-packages/psycopg/connection.py:445(wait)
+   120000    0.164    0.000    0.326    0.000 /source/server/writeoff_analytics.py:97(number)
+   144000    0.183    0.000    0.275    0.000 /source/server/writeoff_analytics.py:183(add)
+    24000    0.016    0.000    0.214    0.000 /source/experiments/prerelease/acceptance.py:53(timed_decode)
+        8    0.000    0.000    0.197    0.025 /usr/local/lib/python3.12/site-packages/httpx/_client.py:1036(get)
+        8    0.000    0.000    0.197    0.025 /usr/local/lib/python3.12/site-packages/httpx/_client.py:771(request)
+        8    0.000    0.000    0.195    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:879(send)
+        8    0.000    0.000    0.194    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:930(_send_handling_auth)
+    24000    0.023    0.000    0.194    0.000 /usr/local/lib/python3.12/json/decoder.py:333(decode)
+        8    0.000    0.000    0.193    0.024 /usr/local/lib/python3.12/site-packages/httpx/_client.py:964(_send_handling_redirects)
+        7    0.003    0.000    0.187    0.027 /usr/local/lib/python3.12/site-packages/httpx/_client.py:1001(_send_single_request)
+    24000    0.101    0.000    0.101    0.000 /usr/local/lib/python3.12/json/decoder.py:344(raw_decode)
+        7    0.000    0.000    0.100    0.014 /usr/local/lib/python3.12/site-packages/httpx/_transports/default.py:230(handle_request)
+        7    0.001    0.000    0.100    0.014 /usr/local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py:199(handle_request)
+    24000    0.017    0.000    0.086    0.000 /source/server/writeoff_analytics.py:202(snapshot_update)
+        7    0.000    0.000    0.085    0.012 /usr/local/lib/python3.12/site-packages/httpcore/_sync/connection.py:69(handle_request)
+        7    0.000    0.000    0.085    0.012 /usr/local/lib/python3.12/site-packages/httpcore/_sync/http11.py:65(handle_request)
+       21    0.000    0.000    0.084    0.004 /usr/local/lib/python3.12/site-packages/httpcore/_sync/http11.py:209(_receive_event)
+        7    0.000    0.000    0.084    0.012 /usr/local/lib/python3.12/site-packages/httpcore/_sync/http11.py:170(_receive_response_headers)
+     3018    0.028    0.000    0.083    0.000 /usr/local/lib/python3.12/site-packages/psycopg/_server_cursor_base.py:157(_fetch_gen)
+        7    0.000    0.000    0.083    0.012 /usr/local/lib/python3.12/site-packages/httpcore/_backends/sync.py:124(read)
+        7    0.082    0.012    0.083    0.012 {method 'recv' of '_socket.socket' objects}
+280481/280333    0.079    0.000    0.081    0.000 {built-in method builtins.isinstance}
+   144019    0.077    0.000    0.077    0.000 {method 'add' of 'set' objects}
+   101924    0.036    0.000    0.070    0.000 {method 'as_tuple' of 'decimal.Decimal' objects}
+    24001    0.018    0.000    0.057    0.000 /usr/local/lib/python3.12/json/encoder.py:183(encode)
+46554/46538    0.055    0.000    0.055    0.000 {built-in method builtins.len}

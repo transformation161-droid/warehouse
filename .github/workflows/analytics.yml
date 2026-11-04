@@ -1,7 +1,7 @@
 name: PostgreSQL analytics acceptance
 on:
   pull_request:
-    branches: [main, feat/issue-21-decision-versions]
+    branches: [main, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
 permissions:
   contents: read
 defaults:

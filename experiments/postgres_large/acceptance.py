@@ -103,7 +103,7 @@ class Case:
              'KSU_PG_BACKUP_DSN':self.backup,'KSU_PG_BACKUP_DIR':str(self.root/'exports'),'KSU_ORIGIN':self.origin,
              'KSU_SECURE_COOKIES':'0','KSU_REQUIRE_INITIALIZED':'1','KSU_IMPORT_PHASE_TIMEOUT_SECONDS':str(timeout)}
         self.log=(self.root/'server.log').open('a')
-        self.server=subprocess.Popen([sys.executable,'-m','server','run','--port',str(port)],env=env,stdout=self.log,stderr=self.log)
+        self.server=subprocess.Popen([sys.executable,'-m','server','run','--port',str(port)],cwd=getattr(self,'source_root',None),env=env,stdout=self.log,stderr=self.log)
         with httpx.Client(trust_env=False) as client:
             for _ in range(200):
                 try:
