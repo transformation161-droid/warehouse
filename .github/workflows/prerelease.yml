@@ -27,6 +27,9 @@ jobs:
       - run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
       - name: Paired 120 HTTP samples, real cursor plans, exact metrics, history and independent restore
         run: python -m experiments.prerelease.run --image ksu-postgres:test --baseline-source "$GITHUB_WORKSPACE/var/issue25-baseline" --output "$GITHUB_WORKSPACE/var/prerelease-checks"
+      - name: Report whitelisted latency and failure diagnostics in annotations
+        if: always()
+        run: python -m experiments.prerelease.summarize "$GITHUB_WORKSPACE/var/prerelease-checks"
       - name: Publish aggregate measurements and plans, never databases, credentials or workbooks
         if: always()
         uses: actions/upload-artifact@v4

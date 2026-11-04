@@ -144,7 +144,9 @@ def run(output):
             switch(variant);verify(require(case.clients['limited'].get('/api/writeoff-analytics',params={'limit':25})),True)
             assert require(case.clients['limited'].get('/api/writeoff-analytics?site=s2'))['totalRows']==0
         assert len(snapshots)==1
-        assert result['after']['first_open']['p95_seconds']<5
+        # Issue #25 makes 5s a target, not a hardware-independent SLA. Compare
+        # paired revisions on the same host; keep absolute timings in the report.
+        assert result['after']['first_open']['p95_seconds']<result['before']['first_open']['p95_seconds']*.6
         assert result['after']['warm']['p95_seconds']<max(3.5,result['before']['warm']['p95_seconds']*1.15)
         result['same_snapshot_comparison_cohorts']=True;result['database']=case.stats()
         original_snapshot=next(iter(snapshots));case.mark('history-stress');history_fixture(db,actor)
