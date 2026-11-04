@@ -3,6 +3,9 @@ from decimal import Decimal
 import io
 import json
 import unittest
+import sqlite3
+from uuid import uuid4
+import psycopg
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
@@ -136,6 +139,38 @@ class Analytics(unittest.TestCase):
         self.assertEqual(self.panel(dateMode='missing')['totalRows'],2)
         empty=self.panel(start='2026-01-01',end='2026-12-31');self.assertEqual(empty['totalRows'],0)
         self.assertEqual(empty['metrics']['documents']['value'],'0');self.assertIsNone(empty['metrics']['cost']['value'])
+
+    def test_fractional_quantity_is_flagged_without_rounding_or_inferred_units(self):
+        source=list(records(5))
+        for row,value in zip(source,['0.000001','1.500000','2.000000',None,'DEMO invalid']):row['quantity']=value
+        rows=insert(self.app.state.db,source);data=self.panel()
+        self.assertEqual(data['metrics']['quantity']['value'],'3.500001')
+        self.assertEqual(data['quality']['fractionalQuantityRows'],2)
+        filtered=self.panel(metricField='quantity',coverage='fractional');self.verify(filtered,rows[:2])
+        self.assertEqual({r['quantity'] for r in filtered['rows']},{'0.000001','1.500000'})
+        exported=self.manager.get('/api/writeoff-analytics/export/rows.csv',params={'metricField':'quantity','coverage':'fractional','expectedSnapshot':filtered['snapshot']})
+        self.assertEqual(exported.status_code,200)
+        parsed=list(csv.DictReader(io.StringIO(exported.content.decode('utf-8-sig')),delimiter=';'))
+        self.assertEqual({r['Кол-во'] for r in parsed},{'0.000001','1.500000'})
+        self.assertEqual(self.manager.get('/api/writeoff-analytics?metricField=cost&coverage=fractional').status_code,422)
+        old=self.initial([self.row(sourceId='DEMO-corrected-fraction',quantity='0.5')])[0]
+        ident,meta=self.correction([self.row(sourceId='DEMO-corrected-fraction',quantity='1.000000',cost='12',residual='5')],old['documentId'])
+        self.assertEqual(self.confirm(ident,meta)['status'],'done')
+        self.assertEqual(self.panel(documentId=old['documentId'])['quality']['fractionalQuantityRows'],0)
+
+    def test_database_rejects_an_entry_linked_to_another_document_version(self):
+        source=list(records(2))
+        for index,row in enumerate(source):row.update(_site='s1',document='ДЕМО · Документ '+str(index))
+        rows=insert(self.app.state.db,source);db=self.app.state.db;actor=db.user('manager')
+        # version_id determines the document: this guard is relied upon by the read join.
+        with self.assertRaises((sqlite3.IntegrityError,psycopg.IntegrityError)):
+            with db.connect(actor) as con:
+                con.execute('begin immediate')
+                original=con.execute('select * from decision_records where id=?',(rows[0]['_id'],)).fetchone()
+                ident=uuid4().hex
+                con.execute('insert into decision_records values(?,?,?,?,?,?,?,?)',(ident,original['import_hash'],original['file_sha'],original['sheet'],999,'s1',actor['id'],original['data']))
+                con.execute('insert into decision_entries values(?,?,?,?,?)',(ident,rows[1]['_doc'],rows[0]['_doc']+'-1','s1',None))
+        self.assertEqual(self.panel()['totalRows'],2)
 
     def test_auth_scope_facets_no_mutation_and_query_validation(self):
         rows=insert(self.app.state.db,records(12))

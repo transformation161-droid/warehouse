@@ -1,0 +1,294 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Nested Loop",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Join Type": "Anti",
+      "Startup Cost": 225.2,
+      "Total Cost": 12887.43,
+      "Plan Rows": 3,
+      "Plan Width": 280,
+      "Inner Unique": false,
+      "Join Filter": "(retired.record_id = d.id)",
+      "Plans": [
+        {
+          "Node Type": "Nested Loop",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Join Type": "Inner",
+          "Startup Cost": 225.2,
+          "Total Cost": 12886.05,
+          "Plan Rows": 3,
+          "Plan Width": 1041,
+          "Inner Unique": true,
+          "Join Filter": "(doc.id = h.document_id)",
+          "Plans": [
+            {
+              "Node Type": "Nested Loop",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Join Type": "Inner",
+              "Startup Cost": 1.54,
+              "Total Cost": 12624.59,
+              "Plan Rows": 9,
+              "Plan Width": 1102,
+              "Inner Unique": true,
+              "Plans": [
+                {
+                  "Node Type": "Nested Loop",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Join Type": "Inner",
+                  "Startup Cost": 1.4,
+                  "Total Cost": 12613.52,
+                  "Plan Rows": 296,
+                  "Plan Width": 944,
+                  "Inner Unique": true,
+                  "Plans": [
+                    {
+                      "Node Type": "Nested Loop",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Join Type": "Inner",
+                      "Startup Cost": 0.98,
+                      "Total Cost": 10721.19,
+                      "Plan Rows": 888,
+                      "Plan Width": 193,
+                      "Inner Unique": true,
+                      "Plans": [
+                        {
+                          "Node Type": "Nested Loop",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Join Type": "Inner",
+                          "Startup Cost": 0.7,
+                          "Total Cost": 10252.45,
+                          "Plan Rows": 2663,
+                          "Plan Width": 102,
+                          "Inner Unique": true,
+                          "Plans": [
+                            {
+                              "Node Type": "Index Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": false,
+                              "Async Capable": false,
+                              "Scan Direction": "Forward",
+                              "Index Name": "decision_entries_pkey",
+                              "Relation Name": "decision_entries",
+                              "Alias": "e",
+                              "Startup Cost": 0.41,
+                              "Total Cost": 9644.67,
+                              "Plan Rows": 8000,
+                              "Plan Width": 164,
+                              "Filter": "accessible(site_id)"
+                            },
+                            {
+                              "Node Type": "Memoize",
+                              "Parent Relationship": "Inner",
+                              "Parallel Aware": false,
+                              "Async Capable": false,
+                              "Startup Cost": 0.29,
+                              "Total Cost": 0.58,
+                              "Plan Rows": 1,
+                              "Plan Width": 70,
+                              "Cache Key": "e.version_id",
+                              "Cache Mode": "logical",
+                              "Plans": [
+                                {
+                                  "Node Type": "Index Scan",
+                                  "Parent Relationship": "Outer",
+                                  "Parallel Aware": false,
+                                  "Async Capable": false,
+                                  "Scan Direction": "Forward",
+                                  "Index Name": "decision_versions_pkey",
+                                  "Relation Name": "decision_versions",
+                                  "Alias": "intro",
+                                  "Startup Cost": 0.28,
+                                  "Total Cost": 0.57,
+                                  "Plan Rows": 1,
+                                  "Plan Width": 70,
+                                  "Index Cond": "(id = e.version_id)",
+                                  "Filter": "accessible(site_id)"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "Node Type": "Memoize",
+                          "Parent Relationship": "Inner",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Startup Cost": 0.29,
+                          "Total Cost": 0.57,
+                          "Plan Rows": 1,
+                          "Plan Width": 91,
+                          "Cache Key": "e.document_id",
+                          "Cache Mode": "logical",
+                          "Plans": [
+                            {
+                              "Node Type": "Index Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": false,
+                              "Async Capable": false,
+                              "Scan Direction": "Forward",
+                              "Index Name": "decision_documents_pkey",
+                              "Relation Name": "decision_documents",
+                              "Alias": "doc",
+                              "Startup Cost": 0.28,
+                              "Total Cost": 0.56,
+                              "Plan Rows": 1,
+                              "Plan Width": 91,
+                              "Index Cond": "(id = e.document_id)",
+                              "Filter": "accessible(site_id)"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Inner",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "decision_records_pkey",
+                      "Relation Name": "decision_records",
+                      "Alias": "d",
+                      "Startup Cost": 0.41,
+                      "Total Cost": 2.13,
+                      "Plan Rows": 1,
+                      "Plan Width": 784,
+                      "Index Cond": "(id = e.record_id)",
+                      "Filter": "accessible(site_id)"
+                    }
+                  ]
+                },
+                {
+                  "Node Type": "Memoize",
+                  "Parent Relationship": "Inner",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 0.15,
+                  "Total Cost": 0.93,
+                  "Plan Rows": 1,
+                  "Plan Width": 161,
+                  "Cache Key": "d.site_id",
+                  "Cache Mode": "logical",
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "records_pkey",
+                      "Relation Name": "records",
+                      "Alias": "s",
+                      "Startup Cost": 0.14,
+                      "Total Cost": 0.92,
+                      "Plan Rows": 1,
+                      "Plan Width": 161,
+                      "Index Cond": "((collection = 'sites'::text) AND (id = d.site_id))",
+                      "Filter": "((actor_role() = 'manager'::text) OR ((actor_role() = 'inspector'::text) AND ((collection = 'questions'::text) OR accessible(CASE WHEN (collection = 'sites'::text) THEN id ELSE site_id END))))"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Node Type": "Materialize",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 223.66,
+              "Total Cost": 229.66,
+              "Plan Rows": 240,
+              "Plan Width": 69,
+              "Plans": [
+                {
+                  "Node Type": "Subquery Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Alias": "h",
+                  "Startup Cost": 223.66,
+                  "Total Cost": 228.46,
+                  "Plan Rows": 240,
+                  "Plan Width": 69,
+                  "Plans": [
+                    {
+                      "Node Type": "Aggregate",
+                      "Strategy": "Hashed",
+                      "Partial Mode": "Simple",
+                      "Parent Relationship": "Subquery",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Startup Cost": 223.66,
+                      "Total Cost": 226.06,
+                      "Plan Rows": 240,
+                      "Plan Width": 69,
+                      "Group Key": [
+                        "decision_versions.document_id"
+                      ],
+                      "Planned Partitions": 0,
+                      "Plans": [
+                        {
+                          "Node Type": "Seq Scan",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Relation Name": "decision_versions",
+                          "Alias": "decision_versions",
+                          "Startup Cost": 0.0,
+                          "Total Cost": 222.46,
+                          "Plan Rows": 240,
+                          "Plan Width": 69,
+                          "Filter": "accessible(site_id)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Node Type": "Materialize",
+          "Parent Relationship": "Inner",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 0.0,
+          "Total Cost": 1.26,
+          "Plan Rows": 1,
+          "Plan Width": 33,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "decision_retirements",
+              "Alias": "retired",
+              "Startup Cost": 0.0,
+              "Total Cost": 1.26,
+              "Plan Rows": 1,
+              "Plan Width": 33,
+              "Filter": "accessible(site_id)"
+            }
+          ]
+        }
+      ]
+    },
+    "Settings": {
+      "search_path": "ksu,pg_catalog"
+    }
+  }
+]

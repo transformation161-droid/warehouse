@@ -46,3 +46,14 @@
 .wa-filter-panel>summary{font-weight:700;cursor:pointer;min-height:28px}.wa-filter-panel[open]>summary{margin-bottom:18px}
 .wa-mobile-rows{display:none}.wa-kpi-value,.wa-chart button,.wa-mobile-row .link{min-height:44px}
 @media(max-width:700px){#wa-rows>.table-wrap{display:none}.wa-mobile-rows{display:grid;gap:12px;margin-bottom:16px}.wa-mobile-row{border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0;overflow-wrap:anywhere}.wa-mobile-row p{font-size:12px;line-height:1.6}.wa-mobile-row dl{font-size:12px;margin:12px 0}.wa-mobile-row dl>div{display:flex;justify-content:space-between;gap:10px;margin:8px 0}.wa-mobile-row dt{color:var(--muted)}.wa-mobile-row dd{margin:0;text-align:right;font-weight:650}}
+
+/* Issue #25: primary filters stay visible; precise quantities are never rounded. */
+.wa-primary-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.wa-primary-filters>*{min-width:0}
+#wa-filters>h3{margin-top:0}.wa-filter-panel{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.wa-applied{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:16px 0;font-size:12px;overflow-wrap:anywhere}
+.wa-filter-chip{border:1px solid #c9dced;color:#194c7f;border-radius:18px;background:#eaf3fc;padding:7px 12px;min-height:38px;text-align:left;max-width:100%;overflow-wrap:anywhere;font:inherit}
+.wa-filter-chip span{margin-left:8px;font-size:17px}.wa-fraction{font-size:.82em;font-weight:550;font-variant-numeric:tabular-nums}.wa-quantity{font-variant-numeric:tabular-nums}
+.wa-quantity-note{color:#4b6378!important}.wa-fraction-warning{color:#8a5710!important}.wa-mobile-row dd small{display:block;font-weight:400;margin-top:4px}.wa-status{scroll-margin-top:85px}
+@media(max-width:1000px){.wa-primary-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.wa-primary-filters .field:nth-child(n+3){grid-column:1/-1}.wa-filter-panel>summary{font-size:13px;line-height:1.6}.wa-filter-chip{min-height:44px}.wa-primary-filters input{width:100%;min-width:0}.wa-applied{gap:6px}}
+.wa-filter-fields{margin:0;padding:0;border:0;min-width:0}.wa-filter-fields:disabled{opacity:.72}

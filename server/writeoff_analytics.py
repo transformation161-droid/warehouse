@@ -2,6 +2,7 @@
 from dataclasses import dataclass,field
 from datetime import date
 from decimal import Decimal,InvalidOperation,localcontext
+from functools import cached_property
 import csv
 import hashlib
 import json
@@ -24,13 +25,15 @@ from .reports import safe_cell
 from .storage import check_storage
 
 FINANCE=('quantity','cost','residual','reimbursable','reimbursed','outstanding')
+NUMBER_MAX=Decimal('1000000000000')
+SNAPSHOT_ENCODE=json.JSONEncoder(ensure_ascii=False,separators=(',',':')).encode
 DIMENSIONS=('toolType','reason','decisionType','responsible','investigation','caseCategory')
 GROUPS={'months':'Месяцы','sites':'Объекты','reasons':'Причины','tools':'Инструменты','categories':'Категории'}
 PROVISIONAL='Предварительная аналитика. Не официальная отчётность: бизнес-ключ документов и исторические пересечения требуют проверки владельцем процесса.'
 DEFINITIONS={
  'documents':{'label':'Документы','unit':'док.','definition':'Число различных логических документов, имеющих хотя бы одну действующую строку в выбранном срезе. Импорты объединены только явно подтверждёнными исправлениями. Не число уникальных названий или файлов; бизнес-идентичность ещё требует проверки.'},
  'decisions':{'label':'Действующие решения','unit':'строк','definition':'Число действующих строк реестра, прошедших все фильтры. Одна строка источника считается одним результатом решения, а не отдельным юридическим актом.'},
- 'quantity':{'label':'Единицы по источнику','unit':'ед.','definition':'Сумма заполненного поля «Кол-во». Единицы измерения источником не нормированы; это не автоматически сопоставимые физические единицы разных видов инструмента.'},
+ 'quantity':{'label':'Количество по источнику','unit':'ед.','definition':'Точная сумма заполненного поля «Кол-во», без округления. Единицы неоднородны и источником не нормированы. Дробные количества требуют проверки источника, но не признаются ошибкой автоматически.'},
  'cost':{'label':'Стоимость списаний','unit':'₽','definition':'Сумма заполненного поля «Стоимость». Не автоматически установленный ущерб.'},
  'residual':{'label':'Остаточная стоимость','unit':'₽','definition':'Сумма заполненного поля «Остаточная стоимость». Не прибавляется к стоимости списаний.'},
  'reimbursable':{'label':'К возмещению','unit':'₽','definition':'Сумма заполненного назначения к возмещению в источнике. Не равна стоимости списаний.'},
@@ -39,7 +42,7 @@ DEFINITIONS={
 
 
 class Query(BaseModel):
-    model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
+    model_config=ConfigDict(extra='forbid',str_strip_whitespace=True,frozen=True)
     start: date|None=None
     end: date|None=None
     site: str=Field(default='',max_length=120)
@@ -59,7 +62,7 @@ class Query(BaseModel):
     month: str=Field(default='',pattern=r'^$|^[0-9]{4}-(0[1-9]|1[0-2])$')
     documentId: str=Field(default='',max_length=80)
     metricField: Literal['','quantity','cost','residual','reimbursable','reimbursed','outstanding']=''
-    coverage: Literal['all','known','missing']='all'
+    coverage: Literal['all','known','missing','fractional']='all'
     chartMetric: Literal['documents','decisions','quantity','cost','residual','reimbursable','reimbursed','outstanding']='cost'
     page: int=Field(default=1,ge=1,le=1000000)
     limit: int=Field(default=50,ge=1,le=100)
@@ -70,11 +73,16 @@ class Query(BaseModel):
         if self.start and self.end and self.start>self.end:raise ValueError('Период перевёрнут')
         if self.dateMode=='missing' and (self.start or self.end or self.month):raise ValueError('Без даты несовместимо с периодом')
         if self.coverage!='all' and not self.metricField:raise ValueError('Выберите показатель детализации')
+        if self.coverage=='fractional' and self.metricField!='quantity':raise ValueError('Дробность относится только к количеству')
         for dimension in DIMENSIONS:
             if getattr(self,dimension) and getattr(self,dimension+'Missing'):raise ValueError('Значение и отсутствие одновременно')
         return self
 
     def filters(self):return self.model_dump(mode='json',exclude={'page','limit','chartMetric','expectedSnapshot'})
+
+    @cached_property
+    def dimension_filters(self):
+        return tuple((f,getattr(self,f),getattr(self,f+'Missing')) for f in DIMENSIONS if getattr(self,f) or getattr(self,f+'Missing'))
 
 
 def parse(request):
@@ -91,7 +99,7 @@ def number(value,quantity=False):
     if isinstance(value,bool):return None,True
     try:
         result=Decimal(str(value))
-        if not result.is_finite() or result<0 or result>Decimal('1000000000000') or result.as_tuple().exponent<(-6 if quantity else -4):return None,True
+        if not result.is_finite() or result<0 or result>NUMBER_MAX or result.as_tuple().exponent<(-6 if quantity else -4):return None,True
         return result,False
     except (ValueError,InvalidOperation):return None,True
 
@@ -99,19 +107,37 @@ def number(value,quantity=False):
 def iter_facts(db,actor,q,full=False):
     remove=" - 'sourceCells' - 'unmappedCells'"+("" if full else " - 'comment'")
     data='(d.data::jsonb'+remove+')::text' if db.backend=='postgresql' else "json_remove(d.data,'$.sourceCells','$.unmappedCells'"+("" if full else ",'$.comment'")+")"
-    sql='''select d.id,d.site_id,d.sheet,d.source_row,d.file_sha,e.document_id,
-      intro.number as introduced_version,h.current_version,doc.label as document_label,
-      json_extract(s.data,'$.name') as site_name,'''+data+''' as data
-      from decision_records d join decision_entries e on e.record_id=d.id
-      join decision_documents doc on doc.id=e.document_id
-      join decision_versions intro on intro.id=e.version_id
-      join (select document_id,max(number) as current_version from decision_versions group by document_id) h on h.document_id=e.document_id
-      join records s on s.collection='sites' and s.id=d.site_id
-      where '''+ACTIVE+''' and (?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id))
+    # PostgreSQL's PK is NOT NULL: an uncorrelated NOT IN is equivalent to ACTIVE
+    # and lets the executor hash visible retirement IDs once, including their RLS.
+    active='d.id not in (select retired.record_id from decision_retirements retired)' if db.backend=='postgresql' else ACTIVE
+    # Bound the dimension side before joining facts. With fresh import statistics the
+    # previous grouped-head join rescanned 24k facts 720 times under RLS.
+    # Every relation in this statement still uses the request actor's unchanged RLS.
+    sql='''with version_metadata as materialized (
+      select intro.id,intro.document_id,intro.number as introduced_version,
+        max(intro.number) over (partition by intro.document_id) as current_version,
+        doc.label as document_label
+      from decision_versions intro join decision_documents doc on doc.id=intro.document_id
+    ), entry_metadata as materialized (
+      select e.record_id,e.document_id,meta.introduced_version,meta.current_version,meta.document_label
+      from decision_entries e join version_metadata meta on meta.id=e.version_id
+    ), visible_sites as materialized (
+      select id,json_extract(data,'$.name') as site_name from records where collection='sites'
+    )
+    select d.id,d.site_id,d.sheet,d.source_row,d.file_sha,e.document_id,
+      e.introduced_version,e.current_version,e.document_label,
+      s.site_name,'''+data+''' as data
+      from decision_records d join entry_metadata e on e.record_id=d.id
+      join visible_sites s on s.id=d.site_id
+      where '''+active+''' and (?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id))
       and (?='' or d.site_id=?) order by d.id'''
+    decode=json.JSONDecoder(parse_float=Decimal).decode
     with db.connect(actor) as con:
+        # Aggregation/exports consume the entire cursor, not the first 10% of it.
+        # Local planner intent only; no persistent PostgreSQL or resource setting.
+        if db.backend=='postgresql':con.execute('set local cursor_tuple_fraction=1')
         for raw in db.iterate(con,sql,(actor['role'],actor['id'],q.site,q.site)):
-            row=dict(raw);row['data']=json.loads(row['data'],parse_float=Decimal)
+            row=dict(raw);row['data']=decode(row['data'])
             item=row['data'];row['dimensions']={k:category(item.get(k)) for k in DIMENSIONS}
             day=item.get('date');row['day']=None;row['invalidDate']=False
             if day not in (None,''):
@@ -137,12 +163,12 @@ def matches(row,q):
     if (q.start or q.end or q.month or q.dateMode=='dated') and day is None:return False
     if q.dateMode=='missing' and day is not None:return False
     if day and ((q.start and day<q.start) or (q.end and day>q.end) or (q.month and day.isoformat()[:7]!=q.month)):return False
-    for field in DIMENSIONS:
-        expected=getattr(q,field);missing=getattr(q,field+'Missing')
+    for field,expected,missing in q.dimension_filters:
         if expected and row['dimensions'][field]!=expected or missing and row['dimensions'][field] is not None:return False
     if q.metricField and q.coverage!='all':
         known=row['numbers'][q.metricField] is not None
         if q.coverage=='known' and not known or q.coverage=='missing' and known:return False
+        if q.coverage=='fractional' and (not known or row['numbers']['quantity']==row['numbers']['quantity'].to_integral_value()):return False
     return True
 
 
@@ -174,7 +200,7 @@ class Bucket:
 
 
 def snapshot_update(digest,row):
-    digest.update(json.dumps([row['id'],row['document_id'],row['current_version'],row['site_name']],ensure_ascii=False,separators=(',',':')).encode()+b'\n')
+    digest.update(SNAPSHOT_ENCODE([row['id'],row['document_id'],row['current_version'],row['site_name']]).encode()+b'\n')
 
 
 def public_row(row):
@@ -188,7 +214,7 @@ def public_row(row):
 
 def aggregate(db,actor,q,all_groups=False):
     start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};facets={f:set() for f in DIMENSIONS};facet_more=set()
-    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0)};digest=hashlib.sha256()
+    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0),'fractionalQuantityRows':0};digest=hashlib.sha256()
     digest.update(json.dumps(q.filters(),sort_keys=True,ensure_ascii=False).encode())
     with localcontext() as context:
         context.prec=50
@@ -200,6 +226,8 @@ def aggregate(db,actor,q,all_groups=False):
                     else:facet_more.add(f)
             if not matches(row,q):continue
             snapshot_update(digest,row);overall.add(row)
+            quantity=row['numbers']['quantity']
+            if quantity is not None and quantity!=quantity.to_integral_value():quality['fractionalQuantityRows']+=1
             if row['day'] is None:quality['missingDateRows']+=1
             if row['invalidDate']:quality['invalidDateRows']+=1
             if row['overpayment'] is not None and row['overpayment']>0:quality['overpaymentRows']+=1;quality['overpaymentValue']+=row['overpayment']

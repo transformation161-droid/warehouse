@@ -2,7 +2,7 @@ name: KSU server tests
 
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions]
+    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
   push:
     branches: [main]
 
@@ -72,6 +72,7 @@ jobs:
             /tmp/ksu_calendar_*.png
             /tmp/ksu_versions_*.png
             /tmp/ksu_analytics_*.png
+            /tmp/ksu_prerelease_ui.json
 
   amvera-container:
     runs-on: ubuntu-latest
