@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 from unittest.mock import patch
@@ -36,6 +37,8 @@ def main():
         live=folder/'live.sqlite3';source=folder/'check1.sqlite3'
         seed_demo(Database(live),passwords['manager'],passwords['inspector'])
         snapshot_database(live,source)
+        # Standalone fixture, same contract as packaged_cli: no writable WAL sidecars.
+        with sqlite3.connect(source) as connection:connection.execute('pragma journal_mode=delete')
         source_sha=hashlib.sha256(source.read_bytes()).hexdigest()
         port=unused_port();origin=f'http://localhost:{port}'
         state_file=project/'var/windows-postgres.json'
