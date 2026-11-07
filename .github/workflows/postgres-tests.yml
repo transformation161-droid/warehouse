@@ -39,17 +39,14 @@ jobs:
             /tmp/ksu_analytics_*.png
             /tmp/ksu_prerelease_ui.json
           retention-days: 7
-  windows-script:
+  windows-powershell:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Validate portable restore script syntax
-        shell: ${{ matrix.shell }}
+        shell: powershell
         run: |
           foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1','tools/Start-Postgres.ps1','tests/windows_launcher.Tests.ps1')) {
             $tokens=$null; $errors=$null
@@ -57,5 +54,22 @@ jobs:
             if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           }
       - name: Launcher contracts without Docker Desktop
-        shell: ${{ matrix.shell }}
+        shell: powershell
+        run: ./tests/windows_launcher.Tests.ps1
+  windows-pwsh:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate portable restore script syntax
+        shell: pwsh
+        run: |
+          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1','tools/Start-Postgres.ps1','tests/windows_launcher.Tests.ps1')) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          }
+      - name: Launcher contracts without Docker Desktop
+        shell: pwsh
         run: ./tests/windows_launcher.Tests.ps1
