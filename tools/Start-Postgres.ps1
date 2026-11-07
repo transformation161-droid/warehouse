@@ -2,13 +2,23 @@
 [CmdletBinding()]
 param(
     [string]$Source = 'C:\KSU\demo-data\backups\check1.sqlite3',
-    [ValidateSet('Start','Stop')][string]$Action = 'Start',
+    [ValidateSet('Start','Stop','RecoverNew')][string]$Action = 'Start',
+    [ValidatePattern('^[a-z][a-z0-9-]{0,48}$')][string]$InstallationName = 'windows-postgres',
     [string]$AppImage = 'ksu-postgres:offline',
     [int]$Port = 8002
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
-$stateFile = Join-Path $project 'var/windows-postgres.json'
+$stateFile = Join-Path $project "var/$InstallationName.json"
+$recoverySourceHash = $null
+if ($Action -eq 'RecoverNew') {
+    if ($InstallationName -eq 'windows-postgres' -or (Test-Path -LiteralPath $stateFile)) { throw 'RecoverNew requires a new InstallationName. Existing state is never overwritten.' }
+    $previous = Get-Content -Raw -LiteralPath (Join-Path $project 'var/windows-postgres.json') | ConvertFrom-Json
+    if ($previous.ready -ne $false -or $previous.db -notmatch '^ksu-windows-[a-f0-9]{12}$' -or $previous.sourceSha256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'RecoverNew requires a valid incomplete original installation.' }
+    if ($Port -eq [int]$previous.port) { throw 'Choose a different port; the previous installation is retained unchanged.' }
+    $recoverySourceHash = $previous.sourceSha256
+    Write-Host 'Recovery creates a NEW independent installation; previous containers, volumes and state are retained untouched.'
+}
 function Invoke-Docker {
     & docker @args
     if ($LASTEXITCODE -ne 0) { throw 'Docker operation failed. Existing data is retained; inspect containers locally.' }
@@ -40,7 +50,7 @@ if (Test-Path -LiteralPath $stateFile) {
     if ($dbName -notmatch '^ksu-windows-[a-f0-9]{12}$' -or $appName -ne "$dbName-app") { throw 'Invalid state file.' }
     # Never provision or migrate a second time, including after a failed first attempt.
     if ($Action -eq 'Stop') { Invoke-Docker stop $appName $dbName | Out-Null; return }
-    if (-not $state.ready) { throw 'Previous setup incomplete. No automatic retry or overwrite. Inspect retained containers and volumes.' }
+    if (-not $state.ready) { throw 'Previous setup incomplete. No automatic retry. Use documented RecoverNew with a new InstallationName and different port; existing data is retained.' }
     Invoke-Docker start $dbName | Out-Null
     Wait-Database
     Invoke-Docker start $appName | Out-Null
@@ -50,6 +60,7 @@ if (Test-Path -LiteralPath $stateFile) {
 if ($Action -eq 'Stop') { throw 'No saved local installation.' }
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Invalid local port.' }
 $sourceFile = Get-Item -LiteralPath $Source
+if ($recoverySourceHash -and (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash -ne $recoverySourceHash) { throw 'Source differs from the original failed installation. Refusing recovery.' }
 if ($sourceFile.PSIsContainer) { throw 'Select an independent SQLite backup file.' }
 foreach ($suffix in @('-wal','-shm','-journal')) {
     if (Test-Path -LiteralPath ($sourceFile.FullName+$suffix)) { throw 'Use a closed standalone SQLite backup without WAL/journal sidecars.' }
@@ -110,18 +121,18 @@ try {
         --entrypoint python $AppImage -m server.pg_admin init --runtime-role ksu_runtime --backup-role ksu_backup
     $report = Invoke-Docker run --rm --pull never --network "container:$dbName" -e KSU_PG_ADMIN_DSN -e KSU_PG_MIGRATION_DIR `
         @codeMount --mount "type=bind,src=$($sourceFile.FullName),dst=/input/source.sqlite3,readonly" `
-        -v "${workVolume}:/work" --entrypoint python $AppImage -m server.pg_admin migrate-sqlite /input/source.sqlite3
+        -v "${workVolume}:/work" --entrypoint python $AppImage -m server.pg_admin migrate-sqlite /input/source.sqlite3 --standalone
     $verified = ($report -join "`n") | ConvertFrom-Json
     if (-not $verified.source_read_only -or -not $verified.sessions_revoked -or -not $verified.tables.users) { throw 'Migration verification report missing.' }
-    $report | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $project 'var/windows-postgres-migration.json')
+    $report | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $project "var/$InstallationName-migration.json")
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash -ne $state.sourceSha256) { throw 'Source file changed. Application will not start.' }
     Invoke-Docker run -d --pull never --name $appName --network "container:$dbName" --memory 1g --cpus 0.5 `
         -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR -e KSU_REQUIRE_INITIALIZED -e KSU_PG_BACKUP_DSN -e KSU_PG_BACKUP_DIR @codeMount -v "${workVolume}:/work" $AppImage | Out-Null
     Wait-App
     $state.ready = $true
     $state | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath $stateFile
-    Write-Host 'Migration verified: counts and SHA-256 per table are in var/windows-postgres-migration.json.'
-    Write-Host 'Restart: run this script again. Stop: run this script with -Action Stop.'
+    Write-Host "Migration verified: counts and SHA-256 per table are in var/$InstallationName-migration.json."
+    Write-Host "Restart: run this script with -InstallationName $InstallationName. Stop: add -Action Stop."
     Write-Host "Stop: docker stop $appName $dbName"
     Write-Host "Local data volumes retained: $dbVolume ; $workVolume"
 } finally {

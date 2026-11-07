@@ -114,9 +114,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-i
 
 Сохраняйте `var\windows-postgres.json`: это указатель на созданную установку, без паролей.
 Повторный запуск не читает SQLite, не создаёт роли и не выполняет повторную миграцию.
-Контейнеры и тома не удаляются даже при ошибке. Если первая установка прервана, скрипт
-откажет в автоматическом продолжении: сохраните журнал и попросите проверить указанные
-контейнеры. Не удаляйте state-файл и не запускайте `docker volume prune` для исправления.
+Контейнеры и тома не удаляются даже при ошибке. Если первая установка прервана, обычный запуск откажет в автоматическом продолжении.
+Используйте отдельный режим RecoverNew ниже; сохраните журнал и старые контейнеры. Не удаляйте state-файл и не запускайте `docker volume prune` для исправления.
 Исходные базы, `main` и другие установки не изменяются. При занятом 8002 скрипт останавливается;
 первую установку можно явно запустить с `-Port 8003`.
 
@@ -161,3 +160,65 @@ PowerShell восстанавливается и при успехе, и при 
 прежних DSN и work-тома, передав `KSU_PG_BACKUP_DIR` и создав каталог с указанными правами.
 Для первой ручной приёмки используйте исправленную версию PR #27. Реальная проверка Docker Desktop
 на Windows и файлов владельца остаётся ручной; cloud-тест использует только синтетические данные.
+
+
+### Самостоятельная WAL-копия и продолжение после первой ошибки миграции
+
+Заголовок SQLite `2 2` (WAL) поддерживается: `Start-Postgres.ps1` вызывает
+`migrate-sqlite --standalone`. Исходный файл остаётся read-only. Байты копируются
+в приватную временную папку work-тома; SQLite открывает только эту writable-копию,
+где может создать служебные WAL/SHM. Затем используется обычный snapshot и миграция
+в одной транзакции со сверкой количества и SHA-256. Заголовок, SHA-256 и байты
+исходного `check1.sqlite3` не меняются. Закрытая самостоятельная копия должна быть
+без соседних `-wal`, `-shm`, `-journal`. Не используйте этот режим для живой базы.
+Общий `snapshot_database` не переведён на immutable и продолжает читать live WAL.
+
+Если на Windows уже создан `var\windows-postgres.json` с `ready:false`, роли
+и схема v2, **не удаляйте** state-файл, контейнеры и тома, не меняйте `ready` вручную.
+Обновите исходники PR #27 в прежней папке, сохранив каталог `var`. Не требуется
+пересобирать офлайн-образ, если он уже прошёл проверку зависимостей: исправленный
+Python-код также монтируется из обновлённых исходников.
+
+Безопасное продолжение создаёт **новую отдельно именованную установку** на 8003,
+поскольку 8002 может оставаться занят старым контейнером:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-issue-25-analytics-polish\tools\Start-Postgres.ps1' -Action RecoverNew -InstallationName windows-postgres-retry -Port 8003 -Source 'C:\KSU\demo-data\backups\check1.sqlite3'
+```
+
+Режим требует исходный `ready:false`, новое имя и другой порт; сверяет SHA-256
+источника с исходным state. Старый state остаётся побайтно прежним, старые роли,
+схема и данные не используются и не изменяются. Новый кластер получает новые
+контейнеры/тома/сеть и пароли. Миграция никогда не пишет в непустую целевую схему.
+Любая ошибка сохраняет обе установки. Если имя retry уже использовано, RecoverNew
+откажется его перезаписывать: при `ready:true` используйте обычный Start ниже,
+при `ready:false` сохраните состояние и журнал для диагностики. Не удаляйте их.
+
+Успех: `Migration verified`, `var\windows-postgres-retry.json` с `ready:true`,
+отчёт `var\windows-postgres-retry-migration.json`, вход прежними аккаунтами
+на **http://localhost:8003**. Сравните количества, фото и суммы с проверенной копией.
+Это новая установка из `check1.sqlite3`, а не объединение данных со старым кластером.
+
+Повторный запуск новой установки (не повторяет миграцию):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-issue-25-analytics-polish\tools\Start-Postgres.ps1' -InstallationName windows-postgres-retry
+```
+
+Остановка только новой установки:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-issue-25-analytics-polish\tools\Start-Postgres.ps1' -InstallationName windows-postgres-retry -Action Stop
+```
+
+Старую неудачную установку эти команды не останавливают и не удаляют. Освобождение
+её ресурсов — отдельное ручное решение после проверки новой базы. Для HTTP backup
+новой установки используйте `Backup-Postgres.ps1 -Origin 'http://localhost:8003/'`.
+
+Автоматическая регрессия `tests.pg_independent_restore`: файл с WAL-заголовком
+2/2 на настоящем read-only Docker bind mount; воспроизведение `attempt to write a
+readonly database` старым путём; роли и v2 уже существуют; отказ неявного retry;
+RecoverNew сохраняет старый state и SQL-данные, создаёт независимую установку;
+затем проверяются stop/start, HTTP backup manager/403 inspector и независимый restore.
+GitHub проверяет PowerShell 5.1/7, Linux Docker и PostgreSQL. Docker Desktop на конкретном
+Windows и файлы владельца в Cloud недоступны — эти команды требуют ручной приёмки.

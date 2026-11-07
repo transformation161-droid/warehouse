@@ -24,6 +24,7 @@ jobs:
         run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
       - name: Independent recovery with source stopped
         run: |
+          python -m unittest tests.test_sqlite_standalone -v
           mkdir -p var/postgres-checks
           set +e
           python -u -m tests.pg_independent_restore 2>&1 | tee var/postgres-checks/launcher-http.txt

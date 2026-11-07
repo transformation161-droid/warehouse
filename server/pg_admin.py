@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import shutil
 import tempfile
 
 import psycopg
@@ -95,12 +96,26 @@ def initialize(dsn,role,backup_role=None):
         if backup_role:grant_backup(connection,backup_role)
 
 
-def migrate_sqlite(source,dsn):
+def migrate_sqlite(source,dsn,standalone=False):
     """Read-only SQLite snapshot; one transaction into a verified empty target schema."""
     validate_transport(dsn)
     with tempfile.TemporaryDirectory(prefix='.ksu-migrate-',dir=os.getenv('KSU_PG_MIGRATION_DIR',str(Path(source).resolve().parent))) as directory:
         snapshot=Path(directory)/'synthetic-or-approved-source.sqlite3'
-        snapshot_database(source,snapshot)
+        if standalone:
+            # Explicit closed standalone-copy contract only. Never use this path for live SQLite.
+            source_path=Path(source).resolve(strict=True)
+            if any(Path(str(source_path)+suffix).exists() for suffix in ('-wal','-shm','-journal')):
+                raise ValueError('Standalone source must not have journal sidecars')
+            if source_path.stat().st_size>int(os.getenv('KSU_DB_MAX_BYTES','268435456')):
+                raise ValueError('Source exceeds the established SQLite cap')
+            writable_source=Path(directory)/'standalone-input.sqlite3'
+            descriptor=os.open(writable_source,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+            with source_path.open('rb') as incoming,os.fdopen(descriptor,'wb') as outgoing:
+                shutil.copyfileobj(incoming,outgoing,1024*1024)
+            # WAL/shm may be created only beside this disposable private byte copy.
+            snapshot_database(writable_source,snapshot)
+        else:
+            snapshot_database(source,snapshot)
         if snapshot.stat().st_size>int(os.getenv('KSU_DB_MAX_BYTES','268435456')):raise ValueError('Source exceeds the established SQLite cap')
         Database(snapshot)  # Upgrade only the private copy, never the source pilot.
         with closing(sqlite3.connect(snapshot)) as old,psycopg.connect(dsn) as target:
@@ -147,7 +162,7 @@ def main():
     provision=sub.add_parser('provision-roles');provision.add_argument('--runtime-role',required=True);provision.add_argument('--backup-role')
     init=sub.add_parser('init');init.add_argument('--runtime-role',required=True);init.add_argument('--backup-role')
     update=sub.add_parser('upgrade');update.add_argument('--runtime-role',required=True);update.add_argument('--backup-role')
-    migrate=sub.add_parser('migrate-sqlite');migrate.add_argument('source')
+    migrate=sub.add_parser('migrate-sqlite');migrate.add_argument('source');migrate.add_argument('--standalone',action='store_true',help='Closed independent SQLite file only; stage bytes privately before SQLite opens it')
     backup=sub.add_parser('backup');backup.add_argument('destination')
     restore=sub.add_parser('restore');restore.add_argument('source');restore.add_argument('--runtime-role',required=True);restore.add_argument('--backup-role')
     args=parser.parse_args()
@@ -156,7 +171,7 @@ def main():
         if args.command=='provision-roles':provision_roles(dsn,args.runtime_role,args.backup_role);result={'roles_created':True}
         elif args.command=='init':initialize(dsn,args.runtime_role,args.backup_role);result={'schema_version':2}
         elif args.command=='upgrade':result=upgrade(dsn,args.runtime_role,args.backup_role)
-        elif args.command=='migrate-sqlite':result=migrate_sqlite(args.source,dsn)
+        elif args.command=='migrate-sqlite':result=migrate_sqlite(args.source,dsn,standalone=args.standalone)
         elif args.command=='backup':
             from .pg_backup import backup_database
             result=backup_database(os.environ.get('KSU_PG_BACKUP_DSN',dsn),args.destination)

@@ -59,6 +59,18 @@ try {
     Assert ($global:ksuTestCalls.Count -eq $before+1) 'Incomplete setup changed Docker state'
     Assert ($env:KSU_PG_RUNTIME_PASSWORD -eq 'sentinel') 'Failure leaked environment'
     Assert ($env:KSU_PG_BACKUP_DIR -eq 'original-backup-dir') 'Failure leaked backup directory environment'
+    $originalState=Get-Content -Raw (Join-Path $root 'var/windows-postgres.json')
+    $global:ksuTestFailMigration=$false
+    & (Join-Path $root 'tools/Start-Postgres.ps1') -Source $source -Port 18083 -Action RecoverNew -InstallationName windows-postgres-retry
+    Assert ((Get-Content -Raw (Join-Path $root 'var/windows-postgres.json')) -eq $originalState) 'Recovery modified original state'
+    Assert ((Get-Content -Raw (Join-Path $root 'var/windows-postgres-retry.json') | ConvertFrom-Json).ready) 'Recovery not ready'
+    $before=$global:ksuTestCalls.Count
+    $failed=$false
+    try { & (Join-Path $root 'tools/Start-Postgres.ps1') -Source $source -Port 18083 -Action RecoverNew -InstallationName windows-postgres-retry } catch { $failed=$true }
+    Assert $failed 'Recovery overwrote existing installation'
+    Assert ($before -eq $global:ksuTestCalls.Count) 'Reused recovery touched Docker'
+    Assert (($global:ksuTestCalls -match '^(rm|volume rm) ').Count -eq 0) 'Recovery deleted resources'
+    Assert (($global:ksuTestCalls -match 'migrate-sqlite.+--standalone').Count -eq 3) 'Missing standalone migration flag'
     Write-Host 'PASS: initialize, read-only source, stop/restart, no remigration, failed migration retained.'
 } finally {
     Remove-Item Function:\docker -ErrorAction SilentlyContinue

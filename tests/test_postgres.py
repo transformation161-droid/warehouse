@@ -89,7 +89,8 @@ class PostgreSQL(unittest.TestCase):
         source=Path(self.temp.name)/'source.sqlite3'
         before=hashlib.sha256(source.read_bytes()).hexdigest()
         with psycopg.connect(self.admin) as con:expected=fingerprints(con,True)
-        with self.assertRaises(ValueError):migrate_sqlite(source,self.admin)
+        for standalone in (False,True):
+            with self.subTest(standalone=standalone),self.assertRaises(ValueError):migrate_sqlite(source,self.admin,standalone=standalone)
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),before)
         with psycopg.connect(self.admin) as con:self.assertEqual(fingerprints(con,True),expected)
 
