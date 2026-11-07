@@ -63,7 +63,7 @@ $appName = "$dbName-app"
 $dbVolume = "$dbName-data"
 $workVolume = "$dbName-work"
 $networkName = "$dbName-net"
-$keys = @('POSTGRES_PASSWORD','KSU_PG_ADMIN_DSN','KSU_PG_RUNTIME_PASSWORD','KSU_DATABASE_URL','KSU_ORIGIN','KSU_SECURE_COOKIES','KSU_WORK_DIR','KSU_PG_RESTORE_DIR','KSU_PG_MIGRATION_DIR','KSU_REQUIRE_INITIALIZED','KSU_PG_BACKUP_PASSWORD','KSU_PG_BACKUP_DSN')
+$keys = @('POSTGRES_PASSWORD','KSU_PG_ADMIN_DSN','KSU_PG_RUNTIME_PASSWORD','KSU_DATABASE_URL','KSU_ORIGIN','KSU_SECURE_COOKIES','KSU_WORK_DIR','KSU_PG_RESTORE_DIR','KSU_PG_MIGRATION_DIR','KSU_REQUIRE_INITIALIZED','KSU_PG_BACKUP_PASSWORD','KSU_PG_BACKUP_DSN','KSU_PG_BACKUP_DIR')
 $old = @{}
 foreach ($key in $keys) { $old[$key] = [Environment]::GetEnvironmentVariable($key) }
 function New-ServiceSecret {
@@ -90,6 +90,7 @@ try {
     $env:KSU_ORIGIN = "http://localhost:$Port"
     $env:KSU_SECURE_COOKIES = '0'
     $env:KSU_WORK_DIR = '/work/app'
+    $env:KSU_PG_BACKUP_DIR = '/work/backups'
     $env:KSU_PG_MIGRATION_DIR = '/work'
     $env:KSU_REQUIRE_INITIALIZED = '1'
     New-Item -ItemType Directory -Force -Path (Split-Path $stateFile) | Out-Null
@@ -102,7 +103,7 @@ try {
         -p "127.0.0.1:${Port}:8000" -v "${dbVolume}:/var/lib/postgresql/data" $pgImage | Out-Null
     Wait-Database
     Invoke-Docker run --rm --pull never --network none --user 0 -v "${workVolume}:/work" `
-        --entrypoint chown $AppImage '1000:1000' /work
+        --entrypoint python $AppImage -c "import os; os.chown('/work',1000,1000); os.makedirs('/work/backups',mode=0o700,exist_ok=True); os.chown('/work/backups',1000,1000); os.chmod('/work/backups',0o700)"
     Invoke-Docker run --rm --pull never --network "container:$dbName" -e KSU_PG_ADMIN_DSN -e KSU_PG_RUNTIME_PASSWORD -e KSU_PG_BACKUP_PASSWORD `
         @codeMount --entrypoint python $AppImage -m server.pg_admin provision-roles --runtime-role ksu_runtime --backup-role ksu_backup
     Invoke-Docker run --rm --pull never --network "container:$dbName" -e KSU_PG_ADMIN_DSN @codeMount `
@@ -115,7 +116,7 @@ try {
     $report | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $project 'var/windows-postgres-migration.json')
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash -ne $state.sourceSha256) { throw 'Source file changed. Application will not start.' }
     Invoke-Docker run -d --pull never --name $appName --network "container:$dbName" --memory 1g --cpus 0.5 `
-        -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR -e KSU_REQUIRE_INITIALIZED -e KSU_PG_BACKUP_DSN @codeMount -v "${workVolume}:/work" $AppImage | Out-Null
+        -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR -e KSU_REQUIRE_INITIALIZED -e KSU_PG_BACKUP_DSN -e KSU_PG_BACKUP_DIR @codeMount -v "${workVolume}:/work" $AppImage | Out-Null
     Wait-App
     $state.ready = $true
     $state | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath $stateFile

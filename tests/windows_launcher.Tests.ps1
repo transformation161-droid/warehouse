@@ -23,6 +23,7 @@ function global:Invoke-RestMethod { return @{status='ok'} }
 function Assert($condition,$message) { if (-not $condition) { throw $message } }
 try {
     $env:KSU_PG_RUNTIME_PASSWORD='sentinel'
+    $env:KSU_PG_BACKUP_DIR='original-backup-dir'
     $global:ksuTestMissingImage=$true
     $failed=$false
     try { & (Join-Path $root 'tools/Start-Postgres.ps1') -Source $source -Port 18082 } catch { $failed=$true }
@@ -33,6 +34,9 @@ try {
     Assert ($env:KSU_PG_RUNTIME_PASSWORD -eq 'sentinel') 'Environment not restored'
     $state = Get-Content -Raw (Join-Path $root 'var/windows-postgres.json') | ConvertFrom-Json
     Assert $state.ready 'Installation not ready'
+    Assert ($env:KSU_PG_BACKUP_DIR -eq 'original-backup-dir') 'Backup directory environment not restored'
+    Assert (($global:ksuTestCalls -match '-e KSU_PG_BACKUP_DSN -e KSU_PG_BACKUP_DIR').Count -eq 1) 'Backup configuration not passed to app'
+    Assert (($global:ksuTestCalls -match "os.chown\('/work/backups',1000,1000\).*os.chmod\('/work/backups',0o700\)").Count -eq 1) 'Private persistent backup directory not initialized'
     Assert (($global:ksuTestCalls -match 'network create --opt com.docker.network.bridge.enable_icc=false').Count -eq 1) 'Missing isolated network'
     Assert (($global:ksuTestCalls -match 'migrate-sqlite').Count -eq 1) 'Expected exactly one migration'
     Assert (($global:ksuTestCalls -match 'dst=/input/source.sqlite3,readonly').Count -eq 2) 'Source must be read-only'
@@ -54,10 +58,12 @@ try {
     Assert $failed 'Incomplete setup must refuse retries'
     Assert ($global:ksuTestCalls.Count -eq $before+1) 'Incomplete setup changed Docker state'
     Assert ($env:KSU_PG_RUNTIME_PASSWORD -eq 'sentinel') 'Failure leaked environment'
+    Assert ($env:KSU_PG_BACKUP_DIR -eq 'original-backup-dir') 'Failure leaked backup directory environment'
     Write-Host 'PASS: initialize, read-only source, stop/restart, no remigration, failed migration retained.'
 } finally {
     Remove-Item Function:\docker -ErrorAction SilentlyContinue
     Remove-Item Function:\Invoke-RestMethod -ErrorAction SilentlyContinue
     Remove-Item Env:\KSU_PG_RUNTIME_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:\KSU_PG_BACKUP_DIR -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $root
 }
