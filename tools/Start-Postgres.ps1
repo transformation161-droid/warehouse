@@ -62,6 +62,7 @@ $dbName = "ksu-windows-$id"
 $appName = "$dbName-app"
 $dbVolume = "$dbName-data"
 $workVolume = "$dbName-work"
+$networkName = "$dbName-net"
 $keys = @('POSTGRES_PASSWORD','KSU_PG_ADMIN_DSN','KSU_PG_RUNTIME_PASSWORD','KSU_DATABASE_URL','KSU_ORIGIN','KSU_SECURE_COOKIES','KSU_WORK_DIR','KSU_PG_RESTORE_DIR','KSU_PG_MIGRATION_DIR','KSU_REQUIRE_INITIALIZED','KSU_PG_BACKUP_PASSWORD','KSU_PG_BACKUP_DSN')
 $old = @{}
 foreach ($key in $keys) { $old[$key] = [Environment]::GetEnvironmentVariable($key) }
@@ -92,11 +93,12 @@ try {
     $env:KSU_PG_MIGRATION_DIR = '/work'
     $env:KSU_REQUIRE_INITIALIZED = '1'
     New-Item -ItemType Directory -Force -Path (Split-Path $stateFile) | Out-Null
-    $state = @{db=$dbName;app=$appName;port=$Port;ready=$false;sourceSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash}
+    $state = @{db=$dbName;app=$appName;network=$networkName;port=$Port;ready=$false;sourceSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash}
     # CreateNew reserves the installation before the first persistent Docker operation.
     $stream = [IO.File]::Open($stateFile,[IO.FileMode]::CreateNew)
     try { $bytes=[Text.Encoding]::UTF8.GetBytes(($state | ConvertTo-Json)); $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
-    Invoke-Docker run -d --pull never --name $dbName --memory 1g --cpus 0.5 -e POSTGRES_PASSWORD `
+    Invoke-Docker network create --internal $networkName | Out-Null
+    Invoke-Docker run -d --pull never --network $networkName --name $dbName --memory 1g --cpus 0.5 -e POSTGRES_PASSWORD `
         -p "127.0.0.1:${Port}:8000" -v "${dbVolume}:/var/lib/postgresql/data" $pgImage | Out-Null
     Wait-Database
     Invoke-Docker run --rm --pull never --network none --user 0 -v "${workVolume}:/work" `

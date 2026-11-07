@@ -33,6 +33,7 @@ try {
     Assert ($env:KSU_PG_RUNTIME_PASSWORD -eq 'sentinel') 'Environment not restored'
     $state = Get-Content -Raw (Join-Path $root 'var/windows-postgres.json') | ConvertFrom-Json
     Assert $state.ready 'Installation not ready'
+    Assert (($global:ksuTestCalls -match 'network create --internal').Count -eq 1) 'Missing isolated network'
     Assert (($global:ksuTestCalls -match 'migrate-sqlite').Count -eq 1) 'Expected exactly one migration'
     Assert (($global:ksuTestCalls -match 'dst=/input/source.sqlite3,readonly').Count -eq 2) 'Source must be read-only'
     Assert (($global:ksuTestCalls -match 'init --runtime-role ksu_runtime --backup-role ksu_backup').Count -eq 1) 'Missing restricted roles/schema'
