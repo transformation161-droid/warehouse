@@ -52,7 +52,7 @@ PDF требует шрифт DejaVu Sans на Linux: `/usr/share/fonts/truetype
 
 Добавлен явно включаемый backend PostgreSQL с миграцией SQLite на копии, SQL RLS/аудитом,
 потоковым независимым backup и восстановлением. Текущий SQLite-режим и Amvera не переключаются.
-[Архитектура, проверки и rollback](docs/POSTGRESQL.md) · [Windows без Python](docs/POSTGRESQL_WINDOWS.md) ·
+[Архитектура, проверки и rollback](docs/POSTGRESQL.md) · [Windows: запуск одной командой без Python](docs/POSTGRESQL_WINDOWS.md#запуск-проверенной-sqlite-копии-на-windows-pr-26-и-новее) ·
 [варианты размещения и смета](docs/POSTGRESQL_OPTIONS.md).
 
 Нагрузочная приёмка реестра (#20): [XLSX 18/30 МБ, накопление и независимое восстановление](docs/POSTGRESQL_LARGE_ACCEPTANCE.md) ·

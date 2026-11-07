@@ -1,7 +1,7 @@
 name: PostgreSQL migration and independent restore
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
+    branches: [feat/issue-25-analytics-polish, main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
 permissions:
   contents: read
 defaults:
@@ -22,6 +22,22 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Build local PostgreSQL tools image, no data or credentials
         run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
+      - name: Independent recovery with source stopped
+        run: |
+          python -m unittest tests.test_sqlite_standalone tests.test_pg_finalize -v
+          mkdir -p var/postgres-checks
+          set +e
+          python -u -m tests.pg_independent_restore 2>&1 | tee var/postgres-checks/launcher-http.txt
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            # Only this synthetic test's traceback; CLI commands never print credentials.
+            python - <<'PYERROR'
+          from pathlib import Path
+          message='\n'.join(Path('var/postgres-checks/launcher-http.txt').read_text().splitlines()[-25:])
+          print('::error::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          PYERROR
+          fi
+          exit "$result"
       - name: Real PostgreSQL contracts, seven browsers, large independent recovery
         run: python -m tests.pg_environment --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-checks"
       - name: Publish only logs and aggregate synthetic metrics
@@ -37,7 +53,24 @@ jobs:
             /tmp/ksu_analytics_*.png
             /tmp/ksu_prerelease_ui.json
           retention-days: 7
-  windows-script:
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate portable restore script syntax
+        shell: powershell
+        run: |
+          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1','tools/Start-Postgres.ps1','tests/windows_launcher.Tests.ps1')) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          }
+      - name: Launcher contracts without Docker Desktop
+        shell: powershell
+        run: ./tests/windows_launcher.Tests.ps1
+  windows-pwsh:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,8 +79,11 @@ jobs:
       - name: Validate portable restore script syntax
         shell: pwsh
         run: |
-          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1')) {
+          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1','tools/Start-Postgres.ps1','tests/windows_launcher.Tests.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           }
+      - name: Launcher contracts without Docker Desktop
+        shell: pwsh
+        run: ./tests/windows_launcher.Tests.ps1

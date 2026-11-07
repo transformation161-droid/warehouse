@@ -6,6 +6,8 @@ param(
     [int]$Port = 8000
 )
 $ErrorActionPreference = 'Stop'
+$project = Split-Path -Parent $PSScriptRoot
+$codeMount = @('--mount',"type=bind,src=$project,dst=/app,readonly")
 $backupFile = Get-Item -LiteralPath $Backup
 if ($backupFile.PSIsContainer) { throw 'Choose a backup file.' }
 if ($AppImage -notmatch '^[A-Za-z0-9][A-Za-z0-9/_.:@-]+$') { throw 'Invalid local image name.' }
@@ -53,12 +55,12 @@ try {
     Invoke-Docker run --rm --pull never --network none --user 0 -v "${workVolume}:/work" `
         --entrypoint chown $AppImage '1000:1000' /work
     Invoke-Docker run --rm --pull never --network "container:$dbName" -e KSU_PG_ADMIN_DSN -e KSU_PG_RUNTIME_PASSWORD `
-        --entrypoint python $AppImage -m server.pg_admin provision-roles --runtime-role ksu_runtime
+        @codeMount --entrypoint python $AppImage -m server.pg_admin provision-roles --runtime-role ksu_runtime
     Invoke-Docker run --rm --pull never --network "container:$dbName" -e KSU_PG_ADMIN_DSN -e KSU_PG_RESTORE_DIR `
-        -v "$($backupFile.FullName):/input/backup.ksubackup:ro" -v "${workVolume}:/work" --entrypoint python $AppImage `
+        -v "$($backupFile.FullName):/input/backup.ksubackup:ro" -v "${workVolume}:/work" @codeMount --entrypoint python $AppImage `
         -m server.pg_admin restore "/input/backup.ksubackup" --runtime-role ksu_runtime
     Invoke-Docker run -d --pull never --name $appName --network "container:$dbName" --memory 1g --cpus 0.5 `
-        -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR -v "${workVolume}:/work" $AppImage | Out-Null
+        -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR @codeMount -v "${workVolume}:/work" $AppImage | Out-Null
     Write-Host "Verified independent local restore. Open http://localhost:$Port and use the original account passwords."
     Write-Host "Stop: docker stop $appName $dbName"
     Write-Host "Local data volumes retained: $dbVolume ; $workVolume"
