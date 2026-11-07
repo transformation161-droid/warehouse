@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 from unittest.mock import patch
 import zipfile
 
@@ -69,8 +70,36 @@ def main():
             assert launch(check=False).returncode!=0  # No implicit retry into existing schema.
             recovery_port=unused_port()
             while recovery_port==port:recovery_port=unused_port()
-            launch('-Action','RecoverNew','-InstallationName','windows-postgres-retry',
-                   '-Source',str(source),'-AppImage','ksu-postgres:test','-Port',str(recovery_port))
+            # Simulate installer health timeout after a real successful migration and app start.
+            launcher.write_text(fixed.replace('function Wait-App {',"function Wait-App { throw 'Simulated installer health timeout';"))
+            assert launch('-Action','RecoverNew','-InstallationName','windows-postgres-retry',
+                   '-Source',str(source),'-AppImage','ksu-postgres:test','-Port',str(recovery_port),check=False).returncode!=0
+            launcher.write_text(fixed)
+            retry_state=project/'var/windows-postgres-retry.json'
+            incomplete=retry_state.read_bytes()
+            running=json.loads(incomplete.decode('utf-8-sig'))
+            assert running['ready'] is False
+            origin=f'http://localhost:{recovery_port}'
+            for _ in range(60):
+                try:
+                    if httpx.get(origin+'/api/health',trust_env=False,timeout=2).status_code==200:break
+                except httpx.HTTPError:pass
+                time.sleep(.2)
+            else:raise AssertionError('Actual app did not start after simulated installer timeout')
+            containers_before=docker('ps','-aq',capture_output=True,text=True).stdout
+            report_path=project/'var/windows-postgres-retry-migration.json'
+            saved_report=report_path.read_bytes();bad=json.loads(saved_report.decode('utf-8-sig'))
+            bad['tables']['users']['count']+=1;report_path.write_text(json.dumps(bad))
+            assert launch('-Action','Finalize','-InstallationName','windows-postgres-retry','-Source',str(source),check=False).returncode!=0
+            assert retry_state.read_bytes()==incomplete
+            legacy_report=json.loads(saved_report.decode('utf-8-sig'));legacy_report.pop('source_sha256',None)
+            report_path.write_text(json.dumps(legacy_report))
+            launch('-Action','Finalize','-InstallationName','windows-postgres-retry','-Source',str(source))
+            finalized=retry_state.read_bytes()
+            launch('-Action','Finalize','-InstallationName','windows-postgres-retry','-Source',str(source))
+            assert retry_state.read_bytes()==finalized
+            assert docker('ps','-aq',capture_output=True,text=True).stdout==containers_before
+            print('PASS: installer timeout -> HTTP 200 -> invalid report refused without state change -> Finalize -> idempotent Finalize; no containers created')
             assert state_file.read_bytes()==failed_bytes
             after=docker('exec','--user','postgres',failed['db'],'psql','-U','postgres','-Atc',
                 "select max(version) from ksu.schema_version; select count(*) from ksu.users; select count(*) from pg_roles where rolname in ('ksu_runtime','ksu_backup')",capture_output=True,text=True).stdout

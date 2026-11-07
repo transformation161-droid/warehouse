@@ -222,3 +222,58 @@ RecoverNew сохраняет старый state и SQL-данные, созда
 затем проверяются stop/start, HTTP backup manager/403 inspector и независимый restore.
 GitHub проверяет PowerShell 5.1/7, Linux Docker и PostgreSQL. Docker Desktop на конкретном
 Windows и файлы владельца в Cloud недоступны — эти команды требуют ручной приёмки.
+
+### Приложение работает, но state остался ready:false: Finalize
+
+Если миграция сформировала отчёт, оба контейнера запущены и приложение уже отвечает
+на http://localhost:8003, **не используйте RecoverNew**: новая база не нужна.
+Обновите исходники текущего PR #27 в рабочей папке
+`C:\KSU\warehouse-feat-windows-postgres-launcher`, сохранив `var` и все тома.
+Обязательно обновите `tools/Start-Postgres.ps1` и новый `server/pg_finalize.py`:
+модуль проверки запускается через `docker exec` в существующем app-контейнере,
+которому исходники уже подключены read-only в `/app`. Пересоздавать контейнер не нужно.
+
+Для уже существующей установки `windows-postgres-retry` выполните:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-windows-postgres-launcher\tools\Start-Postgres.ps1' -Action Finalize -InstallationName windows-postgres-retry -Source 'C:\KSU\demo-data\backups\check1.sqlite3'
+```
+
+Finalize берёт порт **из state** (в данном случае 8003), не создаёт контейнеров,
+томов, ролей или базы, не выполняет миграцию, не меняет DSN/пароли и данные PostgreSQL.
+Перед `ready:true` он проверяет:
+
+- валидность state и SHA-256 исходного `check1.sqlite3`, наличие и структуру отчёта;
+- оба конкретных запущенных контейнера, сохранённые ID (если уже записаны), их связь
+  через сетевое пространство, сеть, именованные data/work-тома и read-only mount кода;
+- публикацию единственного порта приложения на 127.0.0.1 с номером из state и KSU_ORIGIN;
+- HTTP 200 с `status:ok`/`data:demonstration`, без системного прокси, через 127.0.0.1
+  с заголовком **Host: localhost:8003**. TrustedHost allowlist не расширяется;
+- точный состав migration report, целочисленные counts, SHA-256 всех таблиц, схему v2
+  и совпадение fingerprint работающей PostgreSQL с отчётом. Проверка использует
+  существующую read-only backup-роль и транзакцию REPEATABLE READ READ ONLY;
+- что файлы и контейнеры не изменились за время проверки.
+
+Старые отчёты без `source_sha256` поддерживаются: исходный hash проверяется по state
+и фактическому файлу. Новые отчёты дополнительно содержат `source_sha256`. Сессии и
+попытки входа не входят в fingerprint, как и при миграции. Если после миграции уже
+изменены бизнес-записи, fingerprint может отличаться: Finalize откажется без изменения
+state. **Не повторяйте миграцию**, сохраните отчёт для проверки расхождений.
+
+Успех: `Installation finalized: ready=true`, затем обычный запуск/остановка:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-windows-postgres-launcher\tools\Start-Postgres.ps1' -InstallationName windows-postgres-retry
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\KSU\warehouse-feat-windows-postgres-launcher\tools\Start-Postgres.ps1' -InstallationName windows-postgres-retry -Action Stop
+```
+
+Повторный Finalize проверяет установку и оставляет готовый state без перезаписи.
+При несоответствии state сохраняется побайтно прежним. `ready:true` записывается
+атомарной заменой файла в той же папке; JSON вручную не редактировать.
+
+Обычный запуск теперь ждёт health до 180 секунд (`-HealthTimeoutSeconds`, 1–600),
+сообщает последний HTTP-статус/тип отказа и предлагает Finalize, если запуск завершился
+после таймаута. Новый маршрут проверки не зависит от localhost IPv6 и системного прокси.
+Тесты проверяют timeout → работающий HTTP API → отказ при неверном отчёте/контейнерах →
+Finalize → повторный Finalize → stop/start, без новой миграции и создания контейнеров.
+Реальный Docker Desktop на компьютере владельца всё ещё требует ручной приёмки.

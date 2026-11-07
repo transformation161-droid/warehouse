@@ -2,10 +2,11 @@
 [CmdletBinding()]
 param(
     [string]$Source = 'C:\KSU\demo-data\backups\check1.sqlite3',
-    [ValidateSet('Start','Stop','RecoverNew')][string]$Action = 'Start',
+    [ValidateSet('Start','Stop','RecoverNew','Finalize')][string]$Action = 'Start',
     [ValidatePattern('^[a-z][a-z0-9-]{0,48}$')][string]$InstallationName = 'windows-postgres',
     [string]$AppImage = 'ksu-postgres:offline',
-    [int]$Port = 8002
+    [int]$Port = 8002,
+    [ValidateRange(1,600)][int]$HealthTimeoutSeconds = 180
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
@@ -35,29 +36,100 @@ function Wait-Database {
     throw 'Local PostgreSQL did not become ready. Existing data retained.'
 }
 function Wait-App {
-    for ($n=0; $n -lt 60; $n++) {
-        try {
-            $health = Invoke-RestMethod -Uri "http://localhost:$Port/api/health" -TimeoutSec 2
-            if ($health.status -eq 'ok') { Write-Host "Open http://localhost:$Port ; sign in with your existing manager / inspector passwords."; return }
-        } catch { }
-        Start-Sleep -Seconds 1
+    Add-Type -AssemblyName System.Net.Http
+    $handler = New-Object Net.Http.HttpClientHandler
+    $handler.UseProxy = $false
+    $handler.AllowAutoRedirect = $false
+    $client = New-Object Net.Http.HttpClient -ArgumentList $handler
+    $client.Timeout = [TimeSpan]::FromSeconds(5)
+    $client.DefaultRequestHeaders.Host = "localhost:$Port"
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $lastStatus = 'no response'
+    try {
+        while ($watch.Elapsed.TotalSeconds -lt $HealthTimeoutSeconds) {
+            $response = $null
+            try {
+                # Avoid Windows proxy/localhost IPv6 differences; preserve the configured trusted Host.
+                $response = $client.GetAsync("http://127.0.0.1:$Port/api/health").GetAwaiter().GetResult()
+                $lastStatus = "HTTP $([int]$response.StatusCode)"
+                if ([int]$response.StatusCode -eq 200) {
+                    $health = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
+                    if ($health.status -eq 'ok' -and $health.data -eq 'demonstration') {
+                        Write-Host "Open http://localhost:$Port ; sign in with your existing manager / inspector passwords."
+                        return
+                    }
+                    $lastStatus = 'HTTP 200 with unexpected health payload'
+                }
+            } catch { $lastStatus = 'connection/timeout or invalid health response' }
+            finally { if ($response) { $response.Dispose() } }
+            Start-Sleep -Seconds 1
+        }
+        throw "Application health timeout after $HealthTimeoutSeconds seconds ($lastStatus). Data retained. Once healthy, use -Action Finalize -InstallationName $InstallationName."
+    } finally { $client.Dispose(); $handler.Dispose() }
+}
+function Complete-Installation {
+    if ($state.ready -isnot [bool] -or $state.sourceSha256 -notmatch '^[a-fA-F0-9]{64}$' -or $Port -lt 1024 -or $Port -gt 65535) { throw 'Invalid saved installation.' }
+    $sourceItem = Get-Item -LiteralPath $Source
+    if ($sourceItem.PSIsContainer -or (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceItem.FullName).Hash -ne $state.sourceSha256) { throw 'Source SHA-256 differs from saved state.' }
+    $reportPath = Join-Path $project "var/$InstallationName-migration.json"
+    if ((Get-Item -LiteralPath $reportPath).Length -gt 65536) { throw 'Migration report exceeds the expected size.' }
+    $reportText = Get-Content -Raw -LiteralPath $reportPath
+    $report = $reportText | ConvertFrom-Json
+    if ($report.source_read_only -ne $true -or $report.sessions_revoked -ne $true -or -not $report.tables.users) { throw 'Invalid migration report.' }
+    if ($report.PSObject.Properties['source_sha256'] -and $report.source_sha256 -ne $state.sourceSha256) { throw 'Report source SHA-256 differs from saved state.' }
+    $reportHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $reportPath).Hash
+    $containers = ((Invoke-Docker inspect $dbName $appName) -join "`n") | ConvertFrom-Json
+    if (@($containers).Count -ne 2) { throw 'Both saved containers are required.' }
+    $db = $containers[0]; $app = $containers[1]
+    if ($db.Name -ne "/$dbName" -or $app.Name -ne "/$appName" -or -not $db.State.Running -or -not $app.State.Running -or $db.State.Paused -or $app.State.Paused -or $db.State.Restarting -or $app.State.Restarting) { throw 'Saved containers must be running and stable.' }
+    foreach ($pair in @(@('dbId',$db.Id),@('appId',$app.Id))) {
+        if ($state.PSObject.Properties[$pair[0]] -and $state.($pair[0]) -ne $pair[1]) { throw 'Container identity differs from saved state.' }
     }
-    throw 'Application did not become healthy. Data retained; inspect docker logs locally.'
+    if ($app.HostConfig.NetworkMode -notin @("container:$dbName","container:$($db.Id)")) { throw 'Application is not bound to the saved database container.' }
+    if ($state.network -ne "$dbName-net" -or @($db.NetworkSettings.Networks.PSObject.Properties).Count -ne 1 -or -not $db.NetworkSettings.Networks.PSObject.Properties[$state.network]) { throw 'Unexpected database network.' }
+    $dbMount = @($db.Mounts | Where-Object { $_.Destination -eq '/var/lib/postgresql/data' })
+    $workMount = @($app.Mounts | Where-Object { $_.Destination -eq '/work' })
+    $codeMount = @($app.Mounts | Where-Object { $_.Destination -eq '/app' })
+    if ($dbMount.Count -ne 1 -or $dbMount[0].Type -ne 'volume' -or $dbMount[0].Name -ne "$dbName-data" -or -not $dbMount[0].RW -or $workMount.Count -ne 1 -or $workMount[0].Type -ne 'volume' -or $workMount[0].Name -ne "$dbName-work" -or -not $workMount[0].RW -or $codeMount.Count -ne 1 -or $codeMount[0].Type -ne 'bind' -or $codeMount[0].RW) { throw 'Unexpected data/work/code mounts.' }
+    $bindings = @($db.NetworkSettings.Ports.'8000/tcp')
+    if ($bindings.Count -ne 1 -or $bindings[0].HostIp -ne '127.0.0.1' -or $bindings[0].HostPort -ne "$Port" -or @($db.HostConfig.PortBindings.PSObject.Properties).Count -ne 1) { throw 'Unexpected published application port.' }
+    if (@($app.Config.Env | Where-Object { $_ -eq "KSU_ORIGIN=http://localhost:$Port" }).Count -ne 1) { throw 'Application origin differs from saved port.' }
+    Wait-App
+    # Read-only verification inside the existing application. No new containers or credentials.
+    $check = $reportText | & docker exec -i $appName python -m server.pg_finalize
+    if ($LASTEXITCODE -ne 0 -or (($check -join "`n") | ConvertFrom-Json).verified -ne $true) { throw 'Database/report verification failed. State retained; migration must not be repeated.' }
+    $latest = ((Invoke-Docker inspect $dbName $appName) -join "`n") | ConvertFrom-Json
+    if ($latest[0].Id -ne $db.Id -or $latest[1].Id -ne $app.Id -or -not $latest[0].State.Running -or -not $latest[1].State.Running -or $latest[0].State.Paused -or $latest[1].State.Paused) { throw 'Containers changed during verification.' }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourceItem.FullName).Hash -ne $state.sourceSha256 -or (Get-FileHash -Algorithm SHA256 -LiteralPath $reportPath).Hash -ne $reportHash -or (Get-FileHash -Algorithm SHA256 -LiteralPath $stateFile).Hash -ne $initialStateHash) { throw 'Source, report or state changed during verification.' }
+    if ($state.ready) { Write-Host 'Installation already ready; verification passed.'; return }
+    $state.ready = $true
+    $state | Add-Member -NotePropertyName dbId -NotePropertyValue $db.Id -Force
+    $state | Add-Member -NotePropertyName appId -NotePropertyValue $app.Id -Force
+    $temporary = "$stateFile.$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($state | ConvertTo-Json -Depth 10))
+        $stream = [IO.File]::Open($temporary,[IO.FileMode]::CreateNew)
+        try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+        [IO.File]::Replace($temporary,$stateFile,[NullString]::Value)
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+    Write-Host 'Installation finalized: ready=true. Existing database and volumes retained.'
 }
 if (Test-Path -LiteralPath $stateFile) {
+    $initialStateHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $stateFile).Hash
     $state = Get-Content -Raw -LiteralPath $stateFile | ConvertFrom-Json
     $dbName = $state.db; $appName = $state.app; $Port = [int]$state.port
     if ($dbName -notmatch '^ksu-windows-[a-f0-9]{12}$' -or $appName -ne "$dbName-app") { throw 'Invalid state file.' }
+    if ($Action -eq 'Finalize') { Complete-Installation; return }
     # Never provision or migrate a second time, including after a failed first attempt.
     if ($Action -eq 'Stop') { Invoke-Docker stop $appName $dbName | Out-Null; return }
-    if (-not $state.ready) { throw 'Previous setup incomplete. No automatic retry. Use documented RecoverNew with a new InstallationName and different port; existing data is retained.' }
+    if (-not $state.ready) { throw 'Previous setup incomplete. No automatic retry. Use Finalize if migration and app are complete, or documented RecoverNew only after a failed migration; existing data is retained.' }
     Invoke-Docker start $dbName | Out-Null
     Wait-Database
     Invoke-Docker start $appName | Out-Null
     Wait-App
     return
 }
-if ($Action -eq 'Stop') { throw 'No saved local installation.' }
+if ($Action -in @('Stop','Finalize')) { throw 'No saved local installation.' }
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Invalid local port.' }
 $sourceFile = Get-Item -LiteralPath $Source
 if ($recoverySourceHash -and (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash -ne $recoverySourceHash) { throw 'Source differs from the original failed installation. Refusing recovery.' }
@@ -124,13 +196,14 @@ try {
         -v "${workVolume}:/work" --entrypoint python $AppImage -m server.pg_admin migrate-sqlite /input/source.sqlite3 --standalone
     $verified = ($report -join "`n") | ConvertFrom-Json
     if (-not $verified.source_read_only -or -not $verified.sessions_revoked -or -not $verified.tables.users) { throw 'Migration verification report missing.' }
-    $report | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $project "var/$InstallationName-migration.json")
+    $verified | Add-Member -NotePropertyName source_sha256 -NotePropertyValue $state.sourceSha256
+    $verified | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $project "var/$InstallationName-migration.json")
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash -ne $state.sourceSha256) { throw 'Source file changed. Application will not start.' }
     Invoke-Docker run -d --pull never --name $appName --network "container:$dbName" --memory 1g --cpus 0.5 `
         -e KSU_DATABASE_URL -e KSU_ORIGIN -e KSU_SECURE_COOKIES -e KSU_WORK_DIR -e KSU_REQUIRE_INITIALIZED -e KSU_PG_BACKUP_DSN -e KSU_PG_BACKUP_DIR @codeMount -v "${workVolume}:/work" $AppImage | Out-Null
-    Wait-App
-    $state.ready = $true
-    $state | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath $stateFile
+    $state = Get-Content -Raw -LiteralPath $stateFile | ConvertFrom-Json
+    $initialStateHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $stateFile).Hash
+    Complete-Installation
     Write-Host "Migration verified: counts and SHA-256 per table are in var/$InstallationName-migration.json."
     Write-Host "Restart: run this script with -InstallationName $InstallationName. Stop: add -Action Stop."
     Write-Host "Stop: docker stop $appName $dbName"
