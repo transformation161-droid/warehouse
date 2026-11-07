@@ -97,7 +97,7 @@ try {
     # CreateNew reserves the installation before the first persistent Docker operation.
     $stream = [IO.File]::Open($stateFile,[IO.FileMode]::CreateNew)
     try { $bytes=[Text.Encoding]::UTF8.GetBytes(($state | ConvertTo-Json)); $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
-    Invoke-Docker network create --internal $networkName | Out-Null
+    Invoke-Docker network create --opt com.docker.network.bridge.enable_icc=false $networkName | Out-Null
     Invoke-Docker run -d --pull never --network $networkName --name $dbName --memory 1g --cpus 0.5 -e POSTGRES_PASSWORD `
         -p "127.0.0.1:${Port}:8000" -v "${dbVolume}:/var/lib/postgresql/data" $pgImage | Out-Null
     Wait-Database
