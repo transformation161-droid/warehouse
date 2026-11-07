@@ -1,7 +1,7 @@
 name: PostgreSQL migration and independent restore
 on:
   pull_request:
-    branches: [main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
+    branches: [feat/issue-25-analytics-polish, main, feat/issue-4-amvera-pilot, integration/visits-inventory, feat/issue-17-visit-calendar, feat/issue-9-postgresql, test/issue-20-postgres-large-registry, feat/issue-21-decision-versions, feat/issue-15-writeoff-analytics]
 permissions:
   contents: read
 defaults:
@@ -22,6 +22,8 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Build local PostgreSQL tools image, no data or credentials
         run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
+      - name: Independent recovery with source stopped
+        run: python -m tests.pg_independent_restore
       - name: Real PostgreSQL contracts, seven browsers, large independent recovery
         run: python -m tests.pg_environment --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-checks"
       - name: Publish only logs and aggregate synthetic metrics
@@ -39,15 +41,21 @@ jobs:
           retention-days: 7
   windows-script:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Validate portable restore script syntax
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: |
-          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1')) {
+          foreach ($file in @('tools/Backup-Postgres.ps1','tools/Restore-Postgres.ps1','tools/Start-Postgres.ps1','tests/windows_launcher.Tests.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           }
+      - name: Launcher contracts without Docker Desktop
+        shell: ${{ matrix.shell }}
+        run: ./tests/windows_launcher.Tests.ps1
