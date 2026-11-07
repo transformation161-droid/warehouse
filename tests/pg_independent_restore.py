@@ -39,6 +39,9 @@ def main():
         snapshot_database(live,source)
         # Standalone fixture, same contract as packaged_cli: no writable WAL sidecars.
         with sqlite3.connect(source) as connection:connection.execute('pragma journal_mode=delete')
+        # GitHub's host uid can differ from image uid 1000. Only this synthetic
+        # read-only fixture is readable inside Docker; its host parent remains 0700.
+        source.chmod(0o644)
         source_sha=hashlib.sha256(source.read_bytes()).hexdigest()
         port=unused_port();origin=f'http://localhost:{port}'
         state_file=project/'var/windows-postgres.json'

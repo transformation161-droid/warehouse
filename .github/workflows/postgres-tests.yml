@@ -23,7 +23,20 @@ jobs:
       - name: Build local PostgreSQL tools image, no data or credentials
         run: docker build -f Dockerfile.postgres -t ksu-postgres:test .
       - name: Independent recovery with source stopped
-        run: python -m tests.pg_independent_restore
+        run: |
+          mkdir -p var/postgres-checks
+          set +e
+          python -u -m tests.pg_independent_restore 2>&1 | tee var/postgres-checks/launcher-http.txt
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            # Only this synthetic test's traceback; CLI commands never print credentials.
+            python - <<'PYERROR'
+          from pathlib import Path
+          message='\n'.join(Path('var/postgres-checks/launcher-http.txt').read_text().splitlines()[-25:])
+          print('::error::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          PYERROR
+          fi
+          exit "$result"
       - name: Real PostgreSQL contracts, seven browsers, large independent recovery
         run: python -m tests.pg_environment --image ksu-postgres:test --output "$GITHUB_WORKSPACE/var/postgres-checks"
       - name: Publish only logs and aggregate synthetic metrics
