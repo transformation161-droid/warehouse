@@ -6,7 +6,7 @@ import sys
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
-from .pg_admin import TABLES, fingerprints
+from .pg_admin import TABLES, V2_TABLES, fingerprints
 from .pg_transport import validate_transport
 
 
@@ -14,7 +14,7 @@ def validate_report(report):
     if not isinstance(report,dict) or report.get('source_read_only') is not True or report.get('sessions_revoked') is not True:
         raise ValueError('Missing migration guarantees')
     tables=report.get('tables')
-    if not isinstance(tables,dict) or set(tables)!=set(TABLES):raise ValueError('Unexpected migration tables')
+    if not isinstance(tables,dict) or set(tables) not in (set(TABLES),set(V2_TABLES)):raise ValueError('Unexpected migration tables')
     for table,value in tables.items():
         if not isinstance(value,dict) or set(value)!={'count','sha256'}:raise ValueError('Invalid table report')
         if type(value['count']) is not int or value['count']<0:raise ValueError('Invalid record count')
@@ -32,8 +32,10 @@ def verify_database(report):
     with psycopg.connect(os.environ['KSU_PG_BACKUP_DSN'],connect_timeout=10) as connection:
         connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         connection.execute("SET LOCAL statement_timeout = '60s'")
-        if connection.execute('select max(version) from ksu.schema_version').fetchone()[0]!=2:raise ValueError('Unexpected schema version')
-        if fingerprints(connection,True)!=expected:raise ValueError('Database differs from migration report; do not repeat migration')
+        version=3 if set(expected)==set(TABLES) else 2
+        from .pg_backup import validate_schema
+        validate_schema(connection,version)
+        if fingerprints(connection,True,tuple(expected))!=expected:raise ValueError('Database differs from migration report; do not repeat migration')
     return {'verified':True}
 
 

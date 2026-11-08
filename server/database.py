@@ -197,6 +197,9 @@ class Database:
             if not con.execute("select 1 from sqlite_master where type='table' and name='decision_documents'").fetchone():
                 from .decision_version_schema import schema
                 con.executescript(schema())
+            if not con.execute("select 1 from sqlite_master where type='table' and name='operation_receipts'").fetchone():
+                from .offline_schema import schema as offline_schema
+                con.executescript(offline_schema())
         os.chmod(self.path, 0o600)
 
     @contextmanager

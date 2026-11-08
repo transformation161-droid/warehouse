@@ -56,7 +56,7 @@ class PostgreSQLVersions(versions.Versions):
             with psycopg.connect(dsn) as con:
                 self.assertEqual(fingerprints(con,True,LEGACY_TABLES),before)
                 self.assertEqual(con.execute('select count(*) from ksu.decision_entries').fetchone()[0],1)
-                self.assertEqual(con.execute('select max(version) from ksu.schema_version').fetchone()[0],2)
+                self.assertEqual(con.execute('select max(version) from ksu.schema_version').fetchone()[0],3)
         finally:
             with psycopg.connect(self.root_admin,autocommit=True) as con:con.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
 

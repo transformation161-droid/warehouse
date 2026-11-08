@@ -16,8 +16,16 @@ from .pg_transport import validate_transport
 
 LEGACY_TABLES=('users','user_sites','records','audit','mutations','media','imports','decision_records')
 from .decision_version_schema import TABLES as VERSION_TABLES,schema as version_schema
-TABLES=LEGACY_TABLES+VERSION_TABLES
+from .offline_schema import TABLES as OFFLINE_TABLES,KEYS as OFFLINE_KEYS,schema as offline_schema
+V2_TABLES=LEGACY_TABLES+VERSION_TABLES
+TABLES=V2_TABLES+OFFLINE_TABLES
+SCHEMA_VERSION=3
 KEYS={'users':'id','user_sites':'user_id,site_id','records':'collection,id','audit':'seq','mutations':'user_id,id','media':'id','imports':'hash','decision_records':'id','decision_documents':'id','decision_versions':'id','decision_entries':'record_id','decision_retirements':'record_id'}
+KEYS.update(OFFLINE_KEYS)
+
+
+def tables_for_version(version):
+    return {1:LEGACY_TABLES,2:V2_TABLES,3:TABLES}[version]
 
 
 def canonical(row):
@@ -52,6 +60,7 @@ def grant_runtime(connection,role):
     connection.execute(sql.SQL('GRANT INSERT,UPDATE ON ksu.records TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT ON ksu.media,ksu.imports,ksu.decision_records,ksu.mutations TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT ON ksu.decision_documents,ksu.decision_versions,ksu.decision_entries,ksu.decision_retirements TO {}').format(ident))
+    connection.execute(sql.SQL('GRANT INSERT ON ksu.checklist_versions,ksu.operation_receipts,ksu.media_keys,ksu.offline_packages TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT,UPDATE,DELETE ON ksu.sessions,ksu.attempts TO {}').format(ident))
     for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)'):
         connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
@@ -71,8 +80,10 @@ def upgrade_schema(connection):
     connection.execute('select pg_advisory_xact_lock(170009)')
     connection.execute("set local search_path='ksu','pg_catalog'")
     version=connection.execute('select max(version) from ksu.schema_version').fetchone()[0]
-    if version==1:connection.execute(version_schema(True))
-    elif version!=2:raise ValueError('Unsupported schema version')
+    if version==1:
+        connection.execute(version_schema(True));version=2
+    if version==2:connection.execute(offline_schema(True))
+    elif version!=SCHEMA_VERSION:raise ValueError('Unsupported schema version')
 
 
 def upgrade(dsn,role,backup_role=None):
@@ -83,7 +94,7 @@ def upgrade(dsn,role,backup_role=None):
         if fingerprints(connection,True,LEGACY_TABLES)!=before:raise ValueError('Existing business data changed during upgrade')
         grant_runtime(connection,role)
         if backup_role:grant_backup(connection,backup_role)
-        return {'schema_version':2,'existing_data_preserved':True,'tables':fingerprints(connection,True)}
+        return {'schema_version':SCHEMA_VERSION,'existing_data_preserved':True,'tables':fingerprints(connection,True)}
 
 
 def initialize(dsn,role,backup_role=None):
@@ -123,7 +134,7 @@ def migrate_sqlite(source,dsn,standalone=False):
             if {r[0] for r in old.execute("select name from sqlite_master where type='table'")}-known:raise ValueError('Unsupported source tables; refusing to omit data')
             expected=fingerprints(old)
             target.execute('select pg_advisory_xact_lock(170009)')
-            if target.execute('select coalesce(max(version),0) from ksu.schema_version').fetchone()[0]!=2:raise ValueError('Unsupported target schema version')
+            if target.execute('select coalesce(max(version),0) from ksu.schema_version').fetchone()[0]!=SCHEMA_VERSION:raise ValueError('Unsupported target schema version')
             for table in TABLES+('sessions','attempts'):
                 if target.execute(sql.SQL('select exists(select 1 from ksu.{})').format(sql.Identifier(table))).fetchone()[0]:
                     raise ValueError('Destination is not empty; migration cancelled')
@@ -169,7 +180,7 @@ def main():
     try:
         dsn=os.environ['KSU_PG_ADMIN_DSN']
         if args.command=='provision-roles':provision_roles(dsn,args.runtime_role,args.backup_role);result={'roles_created':True}
-        elif args.command=='init':initialize(dsn,args.runtime_role,args.backup_role);result={'schema_version':2}
+        elif args.command=='init':initialize(dsn,args.runtime_role,args.backup_role);result={'schema_version':SCHEMA_VERSION}
         elif args.command=='upgrade':result=upgrade(dsn,args.runtime_role,args.backup_role)
         elif args.command=='migrate-sqlite':result=migrate_sqlite(args.source,dsn,standalone=args.standalone)
         elif args.command=='backup':
