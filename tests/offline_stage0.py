@@ -129,6 +129,13 @@ def run(backend):
                     # Legacy fallback without showPicker/capture uses the ordinary chooser, not another save path.
                     page.locator('#camera-photo').evaluate("e=>{e.removeAttribute('capture');e.showPicker=undefined}")
                     pick('Сделать фото','camera-photo',[]);expect(page.locator('#message')).to_contain_text('Съёмка отменена')
+                    page.evaluate("Object.defineProperty(navigator,'userActivation',{configurable:true,value:undefined})")
+                    page.locator('[data-comment="demo-q1"]').fill('ДЕМО · Нет маркировки · offline-secret-marker')
+                    page.get_by_role('button',name='Сделать фото',exact=True).click()
+                    expect(page.locator('#message')).to_contain_text('Нажмите кнопку фото ещё раз')
+                    pick('Сделать фото','camera-photo',[]);expect(page.locator('#message')).to_contain_text('Съёмка отменена')
+                    page.evaluate('delete navigator.userActivation')
+                    raw=raw_state()
                     page.locator('#camera-photo').evaluate("e=>{e.setAttribute('capture','environment');delete e.showPicker}")
                     for button,element in (('Сделать фото','camera-photo'),('Из галереи','photo')):
                         pick(button,element,{'name':'unsupported.heic','mimeType':'image/heic','buffer':b'DEMO unsupported'})

@@ -68,7 +68,7 @@ async function requestPhoto(input){
     if(dirty){
       // Persist text before handing control to an external camera/gallery. Never open on failure.
       if(!await task(save)||dirty||!vault.key)return;
-      if(navigator.userActivation&&!navigator.userActivation.isActive){say('Черновик сохранён. Нажмите кнопку фото ещё раз, чтобы открыть выбор.');return}
+      if(!navigator.userActivation||!navigator.userActivation.isActive){say('Черновик сохранён. Нажмите кнопку фото ещё раз, чтобы открыть выбор.');return}
     }
     openPhotoPicker(input);
   }catch(error){say(error.message,true)}
