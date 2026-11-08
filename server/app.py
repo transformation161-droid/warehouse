@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from contextlib import asynccontextmanager
 import io
 import json
@@ -160,6 +161,42 @@ def create_app(path=None, origin=None, secure=None):
     @app.post('/api/changes')
     def changes(body:Changes,request:Request):return apply_changes(db,auth(request,True),body)
 
+    from .models import OfflinePackage, OfflineChanges
+    from . import offline
+
+    @app.get('/api/checklists/current')
+    def current_checklist(request:Request):
+        actor=auth(request)
+        with db.connect(actor) as con:
+            con.execute('begin immediate')
+            return offline.current_checklist(con)
+
+    @app.get('/api/checklists/{ident}')
+    def historical_checklist(ident:str,request:Request):
+        actor=auth(request)
+        with db.connect(actor) as con:return offline.checklist(con,ident)
+
+    @app.get('/api/receipts/{ident:path}')
+    def operation_receipt(ident:str,request:Request):
+        actor=auth(request)
+        with db.connect(actor) as con:
+            value=offline.receipt(con,actor,ident)
+            if value is None:fail('Подтверждение не найдено',404)
+            return value
+
+    @app.post('/api/offline/packages')
+    def offline_package(body:OfflinePackage,request:Request):
+        actor=auth(request,True)
+        if len(set(body.siteIds))!=len(body.siteIds):fail('Объект повторяется')
+        with db.connect(actor) as con:
+            con.execute('begin immediate')
+            return offline.package(con,actor,body,db)
+
+    @app.post('/api/offline/changes')
+    def offline_changes(body:OfflineChanges,request:Request):
+        value=apply_changes(db,auth(request,True),body,receipt_only=True,package_id=body.packageId)
+        return JSONResponse(value,status_code=value['status'])
+
     @app.post('/api/admin/backup')
     def export_backup(request:Request):
         actor=auth(request,True)
@@ -233,6 +270,9 @@ def create_app(path=None, origin=None, secure=None):
         try:
             raw=base64.b64decode(content,validate=True)
             if len(raw)>3_000_000:fail('Изображение больше 3 МБ')
+            raw_hash=hashlib.sha256(raw).hexdigest()
+            if bool(payload.mutationId)!=bool(payload.sha256):fail('Для идемпотентного фото нужны mutationId и sha256')
+            if payload.sha256 and not secrets.compare_digest(raw_hash,payload.sha256):fail('Контрольная сумма фото не совпадает',409)
             with warnings.catch_warnings():
                 warnings.simplefilter('error',Image.DecompressionBombWarning)
                 with Image.open(io.BytesIO(raw)) as source:
@@ -244,9 +284,26 @@ def create_app(path=None, origin=None, secure=None):
         except (ValueError,UnidentifiedImageError,OSError,Image.DecompressionBombError,Image.DecompressionBombWarning):fail('Невозможно прочитать изображение')
         ident=secrets.token_hex(24)
         with db.connect(actor) as con:
+            con.execute('begin immediate')
+            if not accessible(con,actor,site):fail('Нет доступа к объекту',403)
+            body_hash=digest(offline.canonical({'siteId':site,'sha256':raw_hash}))
+            if payload.mutationId:
+                saved=offline.receipt(con,actor,payload.mutationId,'media',body_hash)
+                if saved:return saved
+                if con.execute('select 1 from mutations where user_id=? and id=?',(actor['id'],payload.mutationId)).fetchone():
+                    fail('Идентификатор операции уже использован',409)
+                existing=con.execute('select media_id from media_keys where user_id=? and site_id=? and content_hash=?',
+                                     (actor['id'],site,raw_hash)).fetchone()
+                if existing:ident=existing[0]
+            else:existing=None
             if db.backend=='postgresql':
-                con.execute('begin immediate');db.check_capacity(con,len(output.getvalue())+len(thumb.getvalue())+65536)
-            con.execute('insert into media values(?,?,?,?,?,?)',(ident,site,actor['id'],output.getvalue(),thumb.getvalue(),now()))
+                db.check_capacity(con,(0 if existing else len(output.getvalue())+len(thumb.getvalue()))+65536)
+            if not existing:
+                con.execute('insert into media values(?,?,?,?,?,?)',(ident,site,actor['id'],output.getvalue(),thumb.getvalue(),now()))
+                if payload.mutationId:con.execute('insert into media_keys values(?,?,?,?)',(actor['id'],site,raw_hash,ident))
+            if payload.mutationId:
+                return offline.store_receipt(con,actor,payload.mutationId,'media',body_hash,200,
+                    {'url':'/api/media/'+ident,'sha256':raw_hash},[{'siteId':site,'mediaId':ident}])
         return {'url':'/api/media/'+ident}
 
     @app.get('/api/media/{ident}')

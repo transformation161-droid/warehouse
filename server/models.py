@@ -37,6 +37,7 @@ class Inspection(Model):
     date: date
     inspector: str = Field(max_length=120)
     results: list[Result] = Field(min_length=1, max_length=200)
+    checklistVersion: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
 
 
 class Finding(Model):
@@ -134,6 +135,18 @@ class DecisionPreview(Model):
 class MediaFile(Model):
     siteId: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=4_100_000)
+    mutationId: str | None = Field(default=None,min_length=12,max_length=100,pattern=r'^[a-zA-Z0-9_-]+$')
+    sha256: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+
+
+class OfflinePackage(Model):
+    siteIds: list[str] = Field(min_length=1,max_length=5)
+    ttlHours: int = Field(default=24,ge=1,le=24)
+
+
+class OfflineChanges(Changes):
+    packageId: str = Field(pattern=r'^[0-9a-f]{48}$')
+    changes: list[Change] = Field(min_length=1,max_length=100)
 
 
 class DecisionVersionPreview(Model):

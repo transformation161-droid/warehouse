@@ -21,42 +21,71 @@ def accessible(con, actor, site):
                                                      (actor['id'],site)).fetchone())
 
 
-def apply_changes(db, actor, batch):
-    body_hash = digest(batch.model_dump_json())
+def apply_changes(db, actor, batch, receipt_only=False, package_id=None):
+    from .offline import current_checklist, receipt, store_receipt, validate_package, canonical
+    legacy_hash=digest(batch.model_dump_json())
+    body_hash = digest(canonical(batch.model_dump(mode='json')))
     try:
         with db.connect(actor) as con:
             con.execute('begin immediate')
+            saved=receipt(con,actor,batch.mutationId,'changes',body_hash)
+            if saved:
+                if receipt_only:return saved
+                if saved['status']!=200:fail(saved['detail'],saved['status'])
+                return db.snapshot(con,actor)
             previous = con.execute('select body_hash from mutations where user_id=? and id=?', (actor['id'],batch.mutationId)).fetchone()
             if previous:
-                if previous[0] != body_hash:
+                if previous[0] != legacy_hash:
                     fail('Идентификатор запроса уже использован с другим содержимым',409)
+                if receipt_only:fail('Для старой операции нет сохранённого receipt',409)
                 return db.snapshot(con, actor)
-            if db.backend=='postgresql':
-                db.check_capacity(con,len(batch.model_dump_json().encode())*4+len(batch.changes)*16384+65536)
-            seen = set()
+            con.execute('savepoint operation_work')
+            status=200;result={}
+            try:
+                if package_id:validate_package(con,actor,package_id,batch)
+                if any(c.collection=='questions' for c in batch.changes):current_checklist(con)
+                if db.backend=='postgresql':
+                    db.check_capacity(con,len(batch.model_dump_json().encode())*4+len(batch.changes)*16384+65536)
+                seen = set()
+                for change in batch.changes:
+                    key = (change.collection, change.id)
+                    if key in seen:
+                        fail('Запись повторяется в одном запросе')
+                    seen.add(key)
+                    save_record(con, actor, change.collection, change.id, change.data, change.expectedVersion)
+                # Completion is a plan-to-fact transition, not a reusable status shortcut.
+                new_inspections = {c.id for c in batch.changes if c.collection=='inspections' and c.expectedVersion==0}
+                for change in batch.changes:
+                    if change.collection=='visits' and change.data.get('status')=='completed':
+                        visit=json.loads(get_record(con,'visits',change.id)['data'])
+                        if visit['inspectionId'] not in new_inspections:
+                            fail('Выполнить выезд можно только вместе с новым актом проверки',403)
+                # All submitted inspection failures must have exactly one linked finding.
+                for change in batch.changes:
+                    if change.collection != 'inspections':
+                        continue
+                    ins = json.loads(get_record(con,'inspections',change.id)['data'])
+                    linked = [json.loads(r[0]) for r in con.execute("select data from records where collection='findings' and json_extract(data,'$.inspectionId')=?", (change.id,))]
+                    if sorted(x['questionId'] for x in linked) != sorted(x['questionId'] for x in ins['results'] if x['status']=='fail'):
+                        fail('Для каждого нарушения чек-листа нужна ровно одна карточка')
+
+                if any(c.collection=='questions' for c in batch.changes):current_checklist(con)
+                con.execute('insert into mutations values(?,?,?)',(actor['id'],batch.mutationId,legacy_hash))
+            except HTTPException as error:
+                if error.status_code!=409:raise
+                con.execute('rollback to savepoint operation_work')
+                status=409;result={'detail':error.detail}
+            con.execute('release savepoint operation_work')
+            resources=[]
             for change in batch.changes:
-                key = (change.collection, change.id)
-                if key in seen:
-                    fail('Запись повторяется в одном запросе')
-                seen.add(key)
-                save_record(con, actor, change.collection, change.id, change.data, change.expectedVersion)
-            # Completion is a plan-to-fact transition, not a reusable status shortcut.
-            new_inspections = {c.id for c in batch.changes if c.collection=='inspections' and c.expectedVersion==0}
-            for change in batch.changes:
-                if change.collection=='visits' and change.data.get('status')=='completed':
-                    visit=json.loads(get_record(con,'visits',change.id)['data'])
-                    if visit['inspectionId'] not in new_inspections:
-                        fail('Выполнить выезд можно только вместе с новым актом проверки',403)
-            # All submitted inspection failures must have exactly one linked finding.
-            for change in batch.changes:
-                if change.collection != 'inspections':
-                    continue
-                ins = json.loads(get_record(con,'inspections',change.id)['data'])
-                linked = [json.loads(r[0]) for r in con.execute("select data from records where collection='findings' and json_extract(data,'$.inspectionId')=?", (change.id,))]
-                if sorted(x['questionId'] for x in linked) != sorted(x['questionId'] for x in ins['results'] if x['status']=='fail'):
-                    fail('Для каждого нарушения чек-листа нужна ровно одна карточка')
-            con.execute('insert into mutations values(?,?,?)',(actor['id'],batch.mutationId,body_hash))
-            return db.snapshot(con, actor)
+                row=get_record(con,change.collection,change.id)
+                if row and (change.collection in ('sites','questions') or accessible(con,actor,row['site_id'])):
+                    resources.append({'collection':change.collection,'id':change.id,'siteId':row['site_id'],'version':row['version']})
+            saved=store_receipt(con,actor,batch.mutationId,'changes',body_hash,status,result,resources)
+            state=db.snapshot(con,actor) if not receipt_only and status==200 else None
+        if receipt_only:return saved
+        if status!=200:fail(result['detail'],status)
+        return state
     except (sqlite3.IntegrityError,psycopg.IntegrityError) as exc:
         fail('Операция запрещена правилами базы данных' if 'forbidden' in str(exc) or isinstance(exc,psycopg.IntegrityError) else 'Нарушена целостность данных',403)
 
@@ -113,7 +142,10 @@ def save_record(con, actor, collection, ident, payload, expected_version):
             if json.loads(row['data'])['name'].casefold()==data['name'].casefold():
                 fail('Название объекта уже существует',409)
     if collection=='inspections':
-        questions={r['id']:json.loads(r['data']) for r in con.execute("select * from records where collection='questions'")}
+        from .offline import current_checklist, checklist
+        version=checklist(con,data['checklistVersion']) if data['checklistVersion'] else current_checklist(con)
+        data['checklistVersion']=version['id']
+        questions={question['id']:question for question in version['questions']}
         if len(data['results'])!=len(questions) or {r['questionId'] for r in data['results']}!=set(questions):
             fail('Нужно заполнить каждый пункт актуального чек-листа ровно один раз')
         for result in data['results']:

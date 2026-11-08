@@ -1,0 +1,49 @@
+name: Offline stage 1 server contracts
+on:
+  pull_request:
+    branches: [feat/offline-stage0]
+permissions:
+  contents: read
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python deploy/get_caddy.py --output /tmp/ksu-caddy
+      - name: Existing APIs, permissions, versions, receipts and accepted database upgrade
+        env:
+          CADDY_BIN: /tmp/ksu-caddy
+        run: python -m unittest discover -s tests -v
+      - run: python -m playwright install --with-deps chromium
+      - name: Existing UI remains compatible, no offline UI integration
+        run: |
+          python smoke_test.py
+          python v11_flow_test.py
+          python visits_flow_test.py
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Restricted runtime, real commit/lost response, schema v2 upgrade, native independent restore
+        run: python -u -m tests.offline_stage1_environment --output var/offline-stage1-checks
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-stage1-aggregate-postgres-results
+          path: var/offline-stage1-checks/summary.json
+          retention-days: 7
