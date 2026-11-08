@@ -1,0 +1,47 @@
+name: Offline stage 0 synthetic prototype
+on:
+  pull_request:
+    branches: [feat/windows-postgres-launcher]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m unittest tests.test_offline_stage0_server -v
+      - name: Persistent profile, offline reload, crypto, quota, SW update, backend isolation
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: python -u -m tests.offline_stage0 --backend "$BACKEND"
+      - name: Synthetic mobile screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-stage0-${{ matrix.backend }}
+          path: /tmp/ksu-stage0-output/*.png
+          retention-days: 7
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Parse portable launcher in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'experiments/offline_mvp/Start-Prototype.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
