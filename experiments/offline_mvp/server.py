@@ -51,14 +51,14 @@ class Handler(BaseHTTPRequestHandler):
                    'photo':{'id':'demo-reference-photo-v1','url':'/demo-photo.png','sha256':hashlib.sha256(PHOTO).hexdigest()}}
             return self.respond(200,json.dumps(value,ensure_ascii=False).encode(),'application/json')
         if path=='/demo-photo.png':return self.respond(200,PHOTO,'image/png')
-        if path=='/build.json':return self.respond(200,json.dumps({'build':self.server.build}).encode(),'application/json')
+        if path=='/build.json':return self.respond(200,json.dumps({'build':self.server.build,'shellRevision':self.server.shell_revision}).encode(),'application/json')
         routes={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/store.js':'store.js',
                 '/prototype.css':'prototype.css','/sw.js':'sw.js','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg'}
         if path=='/ksu.css':target=self.server.style
         elif path in routes:target=ROOT/routes[path]
         else:return self.respond(404,b'Not found','text/plain')
         content=target.read_bytes()
-        if path=='/sw.js':content=content.replace(b'__BUILD__',self.server.build.encode())
+        if path=='/sw.js':content=content.replace(b'__BUILD__',(self.server.build+'-'+self.server.shell_revision).encode())
         kind={'.js':'text/javascript','.css':'text/css','.html':'text/html; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'}.get(target.suffix,'text/plain')
         self.respond(200,content,kind)
     do_HEAD=do_GET
@@ -78,6 +78,11 @@ def main():
     if args.host not in ('127.0.0.1','localhost') and not args.cert and not args.allow_container_http:parser.error('LAN serving requires trusted HTTPS')
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     server.allowed_hosts={'localhost','127.0.0.1',*args.allowed_host};server.style=args.style;server.build=args.build;server.fail_asset=args.fail_asset
+    # Updating JS/HTML/CSS must invalidate the SW even when the operator keeps --build.
+    digest=hashlib.sha256()
+    for name in ('index.html','app.js','store.js','prototype.css','manifest.webmanifest','icon.svg','sw.js'):
+        content=(ROOT/name).read_bytes();digest.update(name.encode());digest.update(len(content).to_bytes(8,'big'));digest.update(content)
+    digest.update(args.style.read_bytes());server.shell_revision=digest.hexdigest()[:16]
     if args.cert:
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.minimum_version=ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(args.cert,args.key);server.socket=context.wrap_socket(server.socket,server_side=True)

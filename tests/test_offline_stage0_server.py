@@ -16,9 +16,10 @@ from urllib.error import HTTPError
 ROOT=Path(__file__).resolve().parents[1]
 
 @contextmanager
-def server(cert=None,key=None):
+def server(cert=None,key=None,style=None):
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     args=[sys.executable,str(ROOT/'experiments/offline_mvp/server.py'),'--port',str(port)]
+    if style:args+=['--style',str(style)]
     if cert:args+=['--cert',str(cert),'--key',str(key)]
     process=subprocess.Popen(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     context=ssl.create_default_context(cafile=str(cert)) if cert else None
@@ -50,6 +51,17 @@ class Stage0Server(unittest.TestCase):
             self.assertTrue(package['demo']);self.assertEqual(package['expiresAt']-package['issuedAt'],86400000)
             self.assertEqual(hashlib.sha256(package['templateJson'].encode()).hexdigest(),package['templateSha256'])
             with opener.open(origin+package['photo']['url']) as response:self.assertEqual(hashlib.sha256(response.read()).hexdigest(),package['photo']['sha256'])
+
+    def test_shell_revision_changes_without_manual_build_bump(self):
+        with tempfile.TemporaryDirectory() as directory:
+            style=Path(directory)/'style.css';style.write_text('body{color:red}')
+            with server(style=style) as (opener,origin):
+                with opener.open(origin+'/sw.js') as response:first=response.read()
+            style.write_text('body{color:blue}')
+            with server(style=style) as (opener,origin):
+                with opener.open(origin+'/sw.js') as response:second=response.read()
+            self.assertNotEqual(first,second)
+            self.assertIn(b'stage0-v1-',second)
 
     def test_real_trusted_https(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -90,21 +90,71 @@ def run(backend):
                     for select in page.locator('[data-answer]').all():select.select_option('ok')
                     page.locator('[data-answer="demo-q1"]').select_option('fail')
                     page.locator('[data-comment="demo-q1"]').fill('ДЕМО · Нет маркировки · offline-secret-marker')
-                    page.locator('#save').click();expect(page.locator('#message')).to_contain_text('сохранены на устройстве')
+                    expect(page.get_by_role('button',name='Сделать фото',exact=True)).to_be_visible()
+                    expect(page.get_by_role('button',name='Из галереи',exact=True)).to_be_visible()
+                    assert page.locator('#camera-photo').get_attribute('capture')=='environment'
+                    assert page.locator('#camera-photo').get_attribute('accept')=='image/*'
+                    assert page.locator('#photo').get_attribute('capture') is None
+                    def pick(button,element,payload):
+                        with page.expect_file_chooser() as chosen:
+                            page.get_by_role('button',name=button,exact=True).click()
+                        chooser=chosen.value
+                        assert chooser.element.get_attribute('id')==element
+                        chooser.set_files(payload)
+                    # Dirty text must be committed BEFORE the native camera opens; cancellation adds no image.
+                    pick('Сделать фото','camera-photo',[])
+                    expect(page.locator('#message')).to_contain_text('Съёмка отменена')
+                    expect(page.locator('#local-status')).to_contain_text('Сохранено на устройстве')
+                    expect(page.locator('#photos img')).to_have_count(1)
+                    expect(page.locator('[data-comment="demo-q1"]')).to_have_value('ДЕМО · Нет маркировки · offline-secret-marker')
+                    # A real offline process restart after cancel must retain the formerly dirty text.
+                    context.close();context=browser(True);page=context.pages[0];setup(page);page.clock.install(time=time.time());page.goto(origin)
+                    page.locator('#phrase').fill(PHRASE);page.locator('#open').click()
+                    expect(page.locator('[data-comment="demo-q1"]')).to_have_value('ДЕМО · Нет маркировки · offline-secret-marker')
+                    expect(page.locator('#photos img')).to_have_count(1)
                     def image(color):
                         data=io.BytesIO();Image.new('RGB',(64,48),color).save(data,format='PNG');return {'name':'demo.png','mimeType':'image/png','buffer':data.getvalue()}
-                    page.locator('#photo').set_input_files(image('blue'));expect(page.locator('#photos img')).to_have_count(2)
+                    pick('Сделать фото','camera-photo',image('blue'));expect(page.locator('#photos img')).to_have_count(2)
                     ids=page.locator('.photo-meta').all_text_contents()
-                    page.locator('#photo').set_input_files(image('blue'));expect(page.locator('#message')).to_contain_text('уже сохранено')
+                    pick('Из галереи','photo',image('blue'));expect(page.locator('#message')).to_contain_text('уже сохранено')
                     assert page.locator('.photo-meta').all_text_contents()==ids
                     def raw_state():
                         return page.evaluate("""async()=>{const {DB_NAME}=await import('/store.js');return await new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME);r.onsuccess=()=>{const d=r.result,t=d.transaction('records'),q=t.objectStore('records').get('state'),count=t.objectStore('records').count();t.oncomplete=()=>{d.close();resolve({count:count.result,keys:Object.keys(q.result),cipher:Array.from(new Uint8Array(q.result.cipher))})};};r.onerror=()=>reject(r.error)})}""")
                     raw=raw_state();assert set(raw['keys'])=={'iv','cipher'};assert b'offline-secret-marker' not in bytes(raw['cipher'])
+                    # Both cancel event and empty selection preserve the encrypted record and stable IDs.
+                    pick('Из галереи','photo',[]);expect(page.locator('#message')).to_contain_text('Выбор фото отменён')
+                    page.locator('#camera-photo').dispatch_event('cancel')
+                    expect(page.locator('#message')).to_contain_text('Съёмка отменена')
+                    assert raw_state()==raw and page.locator('.photo-meta').all_text_contents()==ids
+                    # Legacy fallback without showPicker/capture uses the ordinary chooser, not another save path.
+                    page.locator('#camera-photo').evaluate("e=>{e.removeAttribute('capture');e.showPicker=undefined}")
+                    pick('Сделать фото','camera-photo',[]);expect(page.locator('#message')).to_contain_text('Съёмка отменена')
+                    page.locator('#camera-photo').evaluate("e=>{e.setAttribute('capture','environment');delete e.showPicker}")
+                    for button,element in (('Сделать фото','camera-photo'),('Из галереи','photo')):
+                        pick(button,element,{'name':'unsupported.heic','mimeType':'image/heic','buffer':b'DEMO unsupported'})
+                        expect(page.locator('#message')).to_contain_text('JPEG/PNG/WebP до 10 МБ')
+                        assert raw_state()==raw
+                    pick('Сделать фото','camera-photo',{'name':'too-large.jpg','mimeType':'image/jpeg','buffer':b'0'*10000001})
+                    expect(page.locator('#message')).to_contain_text('JPEG/PNG/WebP до 10 МБ')
+                    assert raw_state()==raw
+                    print('PASS: separate rear-camera/gallery controls; cancel + restart preserves dirty text; legacy chooser fallback; cross-picker dedup and common validation',flush=True)
                     page.locator('summary').click()
-                    page.locator('#quota').check();page.locator('#photo').set_input_files(image('red'))
+                    page.locator('[data-comment="demo-q1"]').fill('ДЕМО · unsaved text before camera quota failure')
+                    chooser_events=[]
+                    def unexpected_chooser(event):chooser_events.append(event)
+                    page.on('filechooser',unexpected_chooser)
+                    page.locator('#quota').check();page.get_by_role('button',name='Сделать фото',exact=True).click()
+                    expect(page.locator('#message')).to_contain_text('хранилище заполнено')
+                    page.remove_listener('filechooser',unexpected_chooser)
+                    assert not chooser_events and raw_state()==raw
+                    expect(page.locator('[data-comment="demo-q1"]')).to_have_value('ДЕМО · unsaved text before camera quota failure')
+                    page.locator('[data-comment="demo-q1"]').fill('ДЕМО · Нет маркировки · offline-secret-marker')
+                    page.locator('#save').click();expect(page.locator('#message')).to_contain_text('сохранены на устройстве')
+                    raw=raw_state()
+                    page.locator('#quota').check();pick('Сделать фото','camera-photo',image('red'))
                     expect(page.locator('#message')).to_contain_text('хранилище заполнено')
                     assert raw_state()==raw;expect(page.locator('#photos img')).to_have_count(2)
-                    page.locator('#memory').check();page.locator('#photo').set_input_files(image('red'))
+                    page.locator('#memory').check();pick('Из галереи','photo',image('red'))
                     expect(page.locator('#message')).to_contain_text('отказ бюджета памяти')
                     assert raw_state()==raw
                     # Configured capacity guard, distinct from a physical disk-full experiment.
@@ -112,10 +162,13 @@ def run(backend):
                     assert budget_error=='QuotaExceededError',budget_error
                     assert raw_state()==raw
                     print('PASS: encrypted state, stable photo IDs, atomic transaction abort, configured 100 MiB budget guard, memory-budget simulation',flush=True)
+                    pick('Из галереи','photo',image('green'));expect(page.locator('#photos img')).to_have_count(3)
+                    gallery_ids=page.locator('.photo-meta').all_text_contents();assert gallery_ids[:len(ids)]==ids
+                    ids=gallery_ids
                     context.close()
                     context=browser(True);page=context.pages[0];setup(page);page.clock.install(time=time.time());page.goto(origin)
                     page.locator('#phrase').fill('incorrect local phrase');page.locator('#open').click();expect(page.locator('#message')).to_contain_text('Неверная фраза')
-                    page.locator('#phrase').fill(PHRASE);page.locator('#open').click();expect(page.locator('#photos img')).to_have_count(2)
+                    page.locator('#phrase').fill(PHRASE);page.locator('#open').click();expect(page.locator('#photos img')).to_have_count(3)
                     expect(page.locator('[data-comment="demo-q1"]')).to_have_value('ДЕМО · Нет маркировки · offline-secret-marker')
                     assert page.locator('.photo-meta').all_text_contents()==ids
                     print('PASS: full browser restart with server stopped + offline; phrase required; draft and photo IDs restored',flush=True)
@@ -129,14 +182,14 @@ def run(backend):
                     page.wait_for_function("async()=>{const r=await navigator.serviceWorker.getRegistration();return r.active?.state==='activated'&&!r.waiting}")
                     page.reload();page.locator('#phrase').fill(PHRASE);page.locator('#open').click()
                     expect(page.locator('[data-comment="demo-q1"]')).to_have_value('ДЕМО · saved before SW update')
-                    expect(page.locator('#photos img')).to_have_count(2)
+                    expect(page.locator('#photos img')).to_have_count(3)
                     stop();start('stage0-v3','/prototype.css');context.set_offline(False)
                     page.locator('summary').click()
                     page.locator('#check-update').click()
                     page.wait_for_timeout(2500)
                     assert not page.evaluate('(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting)()')
                     stop();context.set_offline(True);page.reload();page.locator('#phrase').fill(PHRASE);page.locator('#open').click()
-                    expect(page.locator('#photos img')).to_have_count(2)
+                    expect(page.locator('#photos img')).to_have_count(3)
                     cached=page.evaluate("async()=>{let a=[];for(const n of await caches.keys())for(const r of await (await caches.open(n)).keys())a.push(new URL(r.url).pathname);return a}")
                     assert '/demo-package.json' not in cached and '/demo-photo.png' not in cached and not any(x.startswith('/api/') for x in cached)
                     # Expiry is a local policy; no deletion on expiry. Clock rollback is a documented limitation.
@@ -148,7 +201,7 @@ def run(backend):
                     expect(page.locator('#package-status')).to_contain_text('24 часа истекли')
                     page.locator('[data-comment="demo-q1"]').fill('blocked after expiry')
                     expect(page.locator('#message')).to_contain_text('истёк')
-                    expect(page.locator('#photos img')).to_have_count(2)
+                    expect(page.locator('#photos img')).to_have_count(3)
                     assert not errors,errors
                     output=Path(os.getenv('KSU_STAGE0_OUTPUT',str(Path(tempfile.gettempdir())/'ksu-stage0-output')));output.mkdir(parents=True,exist_ok=True)
                     page.screenshot(path=str(output/f'mobile-{backend}.png'),full_page=True)
