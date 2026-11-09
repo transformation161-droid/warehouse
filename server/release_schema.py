@@ -72,6 +72,7 @@ def prepare_sqlite(source,destination,closed_backup=False):
             after=fingerprints(con)
         from .maintenance import snapshot_database
         target=destination/'ksu.sqlite3';snapshot_database(copy,target)
+        if inspect_sqlite(target)['version']!=3:raise ValueError('Final migrated copy failed release schema verification')
         if checksum(source)!=source_hash or any(Path(str(source)+suffix).exists() for suffix in ('-wal','-shm','-journal')):raise ValueError('Source changed during preparation; do not start staging')
         report={'source_sha256':source_hash,'schema_before':inventory['version'],'schema_after':3,'source_unchanged':True,
                 'all_original_tables_preserved':True,'sessions_revoked':True,'tables':after}

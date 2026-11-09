@@ -41,6 +41,14 @@ def run():
         for table in before:
             if table not in ('sessions','attempts','sqlite_sequence'):assert migrated[table]==before[table],table
         assert report['schema_before']==0 and report['schema_after']==3
+        malformed=root/'unsupported.sqlite3'
+        with closing(sqlite3.connect(backup)) as src,closing(sqlite3.connect(malformed)) as dst:
+            src.backup(dst);dst.execute('alter table users add column unsupported_extension text');dst.commit()
+        malformed_hash=checksum(malformed)
+        try:prepare_sqlite(malformed,root/'rejected-candidate',closed_backup=True)
+        except ValueError:pass
+        else:raise AssertionError('Unknown legacy constraints/columns must not be certified as migrated')
+        assert checksum(malformed)==malformed_hash
         with patch.dict(os.environ,{'KSU_OFFLINE_MODE':'staging','KSU_OFFLINE_DEPLOYMENT_ID':'c'*32,'KSU_OFFLINE_USER_IDS':'inspector'}):
             app=create_app(target,'http://testserver',False)
             clients={}
