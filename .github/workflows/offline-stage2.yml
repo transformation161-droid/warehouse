@@ -28,8 +28,6 @@ jobs:
   server:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      CADDY_BIN: ${{ runner.temp }}/ksu-stage2-caddy
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,9 +42,12 @@ jobs:
           python - <<'PY'
           import os,time,urllib.error
           from deploy.get_caddy import install
+          target=os.path.join(os.environ['RUNNER_TEMP'],'ksu-stage2-caddy')
           for attempt in range(3):
               try:
-                  install(os.environ['CADDY_BIN'])
+                  install(target)
+                  with open(os.environ['GITHUB_ENV'],'a') as env:
+                      env.write('CADDY_BIN='+target+'\n')
                   break
               except Exception as error:
                   # Static public release only; expose the reason as an annotation, not a log URL.
