@@ -81,6 +81,8 @@ def run(previous_ref='3e3771ec0dd93eba5cc16d83cb477002273315a4'):
         if process.returncode:raise RuntimeError('Previous-version synthetic fixture failed: '+process.stderr[-2000:])
         baseline=fingerprint(source)
         with closing(sqlite3.connect(source)) as src,closing(sqlite3.connect(target)) as dest:src.backup(dest)
+        from server.viewer_schema import upgrade_users_copy
+        upgrade_users_copy(target)
         app=create_app(target,'http://testserver',False)
         upgraded=fingerprint(target)
         assert {k:upgraded[k] for k in baseline}==baseline

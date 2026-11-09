@@ -1,3 +1,5 @@
+> Исторический документ PR33 (v3). Для этой ветки актуальны [интеграция v4 и права](RELEASE_VIEWER.md), [Android](ANDROID_RELEASE_ACCEPTANCE.md) и [backup по расписанию](SCHEDULED_BACKUP.md).
+
 # Выполненные проверки кандидата — 09.11.2026
 
 Только синтетика, отдельные временные SQLite/PG/контейнеры/профили Chromium. Amvera и существующие

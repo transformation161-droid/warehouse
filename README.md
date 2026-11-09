@@ -1,3 +1,5 @@
+> Текущий кандидат v4: [брендинг, viewer, миграции](docs/RELEASE_VIEWER.md), [синтетическая Android-приёмка](docs/ANDROID_RELEASE_ACCEPTANCE.md), [расписание backup](docs/SCHEDULED_BACKUP.md). Выпуск в production заблокирован до ручных проверок.
+
 > Подготовка первого офлайн-релиза: [план, staging, backup и откат](docs/OFFLINE_RELEASE.md).
 > Кандидат не допущен к production; действующую Amvera и main эта ветка не изменяет.
 

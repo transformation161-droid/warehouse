@@ -16,7 +16,7 @@ def main():
         env=test_environment(cluster);env.update(prepare(IMAGE,output/'client-tools'))
         modules=['tests.test_offline_stage1.PostgreSQLOffline','tests.test_offline_stage2_server.PostgreSQLStage2','tests.test_postgres',
                  'tests.test_postgres_versions','tests.test_postgres_analytics']
-        if args.release:modules.append('tests.test_offline_release.PostgreSQLRelease')
+        if args.release:modules.extend(['tests.test_offline_release.PostgreSQLRelease','tests.test_viewer.PostgreSQLViewer'])
         with (output/'private-postgres-tests.txt').open('w') as log:
             result=subprocess.run([sys.executable,'-m','unittest',*modules,'-v'],env=env,stdout=log,stderr=log)
         # Only aggregate results are eligible for CI artifacts, not DB/dump/TLS keys or logs.

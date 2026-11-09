@@ -8,9 +8,10 @@ const stable=x=>JSON.stringify(x,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v
 const lineMoney=(quantity,price)=>Math.round((quantity*Number(price)+Number.EPSILON)*100)/100;
 
 async function api(path,options={}){
-  const response=await fetch('/api/'+path,{credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(sessionUser?{'X-CSRF-Token':sessionUser.csrf}:{}),...options.headers}});
+  if(sessionUser?.role==='viewer'&&options.method&&options.method!=='GET'&&!['login','logout'].includes(path))throw Error('Только просмотр');
+  const response=await fetch('/api/'+path,{credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(sessionUser?{'X-CSRF-Token':sessionUser.csrf,...(path!=='login'?{'X-KSU-Expected-User':sessionUser.id}:{})}:{}),...options.headers}});
   if(!response.ok){let error;try{error=await response.json()}catch{error={detail:'Сервер недоступен'}}
-    if(response.status===401&&sessionUser){sessionUser=null;showLogin('Сессия завершилась. Войдите снова; неподтверждённые изменения сохранены для вашей учётной записи.')}
+    if((response.status===401||response.headers.get('X-KSU-Identity-Mismatch')==='1'||response.headers.get('X-KSU-Viewer-Disabled')==='1')&&sessionUser){sessionUser=null;showLogin(typeof error.detail==='string'?error.detail:'Подтвердите текущую сессию. Локальные очереди сохранены.')}
     const failure=Error(typeof error.detail==='string'?error.detail:'Проверьте введённые значения');failure.status=response.status;throw failure;
   }
   return response.json();
@@ -18,7 +19,7 @@ async function api(path,options={}){
 
 // Only the recovery queue, not the database, is retained on the device. It is isolated by account.
 async function queueStore(value,read=false,kind='pending'){
-  const user=sessionUser?.id;if(!user) return null;
+  const user=sessionUser?.id;if(!user||sessionUser.role==='viewer') return null;
   return new Promise((resolve,reject)=>{
     const open=indexedDB.open('ksu-recovery-v2',1);
     open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(open.error);
@@ -33,13 +34,14 @@ async function queueStore(value,read=false,kind='pending'){
 }
 
 function showLogin(message=''){
-  initialized=false;
+  initialized=false;db=freshData();pending=null;ui.draft=null;
   $('#dialog-root').innerHTML='';
   $('#app').innerHTML=`<main class="login-shell"><section class="card login-card"><div class="logo-mark"><img src="/assets/instrakt-logo.svg" alt="ИНСТРАКТ" style="width:100%;height:100%;object-fit:contain"></div><h1>ИНСТРАКТ | Складской учет</h1><p class="muted-line">Защищённая совместная работа</p><form id="login-form"><div class="field"><label for="username">Логин</label><input id="username" name="username" autocomplete="username" required maxlength="120"></div><div class="field section-gap"><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="200"></div><p id="login-error" role="alert">${esc(message)}</p><button class="btn primary" type="submit">Войти</button></form><p class="tiny muted">Роль и доступ к объектам назначаются на сервере.</p></section></main>`;
 }
 
 async function enter(){
   db=await api('state');ui.role=sessionUser.role;ui.page='home';ui.siteId=null;ui.wizard=false;ui.modal=null;
+  if(sessionUser.role==='viewer'){pending=null;ui.draft=null;connected=true;initialized=true;renderViewer();return}
   pending=await queueStore(null,true);
   const draft=await queueStore(null,true,'draft');
   if(draft&&!pending){ui.draft=draft.data;ui.activeVisitId=draft.visit;ui.wizard=true;ui.page='audits'}
@@ -56,6 +58,7 @@ document.addEventListener('submit',async e=>{
 
 const originalRender=render;
 render=function(){
+  if(sessionUser?.role==='viewer'){renderViewer();return}
   if(!sessionUser)return;
   originalRender();
   if(sessionUser.role==='inspector'){const link=document.createElement('a');link.href='/offline-visit/';link.className='btn secondary';link.textContent='Офлайн-проверка';$('.workspace').prepend(link)}
@@ -222,3 +225,5 @@ setInterval(async()=>{
 },1000);
 window.addEventListener('beforeunload',e=>{if(pending||sending||ui.wizard||document.querySelector('.modal form')){e.preventDefault();e.returnValue=''}});
 (async()=>{try{sessionUser=await api('me');await enter()}catch{showLogin()}})();
+
+window.addEventListener('pageshow',event=>{if(event.persisted){sessionUser=null;showLogin('Подтвердите текущую сессию. Очереди других аккаунтов не загружаются.')}});

@@ -73,6 +73,15 @@ def create_app(path=None, origin=None, secure=None):
 
     @app.middleware('http')
     async def security(request, call_next):
+        if request.url.path.startswith('/api/') and request.url.path not in ('/api/login','/api/logout') and request.cookies.get('ksu_session'):
+            with db.connect() as con:
+                reader=con.execute('select u.id,u.role from sessions s join users u on u.id=s.user_id where s.token_hash=? and s.expires>? and u.active=1',(digest(request.cookies['ksu_session']),time.time())).fetchone()
+            if reader and request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=reader[0]:
+                return JSONResponse({'detail':'Сессия изменилась. Локальные очереди сохранены.'},status_code=403,headers={'Cache-Control':'no-store','X-KSU-Identity-Mismatch':'1'})
+            if reader and reader[1]=='viewer':
+                from .viewer import authorize
+                try:authorize({'role':'viewer'},request.url.path,request.method)
+                except HTTPException as error:return JSONResponse({'detail':error.detail},status_code=error.status_code,headers={'Cache-Control':'no-store',**(error.headers or {})})
         if request.method in ('POST','PUT','PATCH','DELETE'):
             if request.headers.get('origin')!=public_origin:
                 return JSONResponse({'detail':'Недопустимый источник запроса'},status_code=403)
@@ -109,9 +118,11 @@ def create_app(path=None, origin=None, secure=None):
                             (digest(token),time.time())).fetchone()
         if not row:fail('Войдите в свою учётную запись',401)
         actor=dict(row)
+        from .viewer import authorize
+        authorize(actor,request.url.path,request.method)
         if release_policy:release_policy.routes(request.url.path)
         if request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=actor['id']:
-            fail('Сессия принадлежит другому пользователю. Очередь сохранена.',403)
+            raise HTTPException(403,'Сессия принадлежит другому пользователю. Очередь сохранена.',headers={'X-KSU-Identity-Mismatch':'1'})
         if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_deployment_id',getattr(app.state,'offline_lab_id',None)):
             fail('Другая установка приложения. Очередь сохранена.',409)
         if csrf and not secrets.compare_digest(request.headers.get('x-csrf-token',''),actor['csrf']):
@@ -242,17 +253,22 @@ def create_app(path=None, origin=None, secure=None):
         if not backup_gate.acquire(blocking=False):fail('Другая копия ещё формируется',429)
         temporary=None
         try:
-            maximum=int(os.getenv('KSU_BACKUP_EXPORT_MAX_BYTES','16777216'))
+            export_dir=os.getenv('KSU_BACKUP_EXPORT_DIR')
+            if export_dir:
+                from .backup_export import directory,MAXIMUM
+                folder=directory(db.path);maximum=MAXIMUM
+            else:folder=None;maximum=int(os.getenv('KSU_BACKUP_EXPORT_MAX_BYTES','16777216'))
             if db.path.stat().st_size>maximum:fail('Копия превышает бесплатный лимит внешнего экспорта; требуется решение администратора',413)
             from .maintenance import snapshot_database
-            temporary=tempfile.TemporaryDirectory(prefix='ksu-private-export-')
+            temporary=tempfile.TemporaryDirectory(prefix='.ksu-private-export-',dir=folder)
             target=Path(temporary.name)/'backup.sqlite3'
-            snapshot_database(db.path,target)
+            snapshot_database(db.path,target,timeout=120 if export_dir else None,maximum=maximum)
             if target.stat().st_size>maximum:fail('Копия превышает лимит экспорта',413)
             def cleanup():
                 temporary.cleanup()
                 backup_gate.release()
-            return FileResponse(target,media_type='application/octet-stream',filename='ksu-backup.sqlite3',background=BackgroundTask(cleanup))
+            from .release_schema import checksum
+            return FileResponse(target,media_type='application/octet-stream',filename='ksu-backup.sqlite3',headers={'X-Backup-SHA256':checksum(target)},background=BackgroundTask(cleanup))
         except Exception:
             if temporary:temporary.cleanup()
             backup_gate.release()
@@ -577,7 +593,7 @@ def create_app(path=None, origin=None, secure=None):
             if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release

@@ -18,6 +18,7 @@ class StandaloneSQLite(unittest.TestCase):
             seed_demo(Database(source),secrets.token_urlsafe(24),secrets.token_urlsafe(24))
             with closing(sqlite3.connect(source)) as live:
                 live.execute('pragma journal_mode=wal');live.execute('pragma wal_autocheckpoint=0')
+                live.create_function('actor_role',0,lambda:'')
                 live.execute("update users set name='DEMO uncheckpointed WAL' where username='manager'");live.commit()
                 self.assertGreater(Path(str(source)+'-wal').stat().st_size,0)
                 snapshot_database(source,target)

@@ -39,3 +39,7 @@
 
 !assets/
 !assets/instrakt-logo.svg
+
+!Dockerfile.offline-acceptance
+!tests/
+!tests/release_acceptance_seed.py

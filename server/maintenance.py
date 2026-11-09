@@ -1,6 +1,7 @@
 """Verified, no-overwrite snapshots. Neither a restore nor a backup copies live sessions."""
 import os
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
@@ -21,7 +22,7 @@ def validate_database(path):
             raise ValueError('База не инициализирована')
 
 
-def snapshot_database(source, destination):
+def snapshot_database(source, destination, timeout=None, maximum=None):
     source = Path(source).resolve(strict=True)
     target = Path(destination)
     if target.exists() or target.is_symlink():
@@ -30,11 +31,16 @@ def snapshot_database(source, destination):
     temporary = target.with_name('.' + target.name + '.' + uuid4().hex + '.partial')
     descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(descriptor)
+    deadline=time.monotonic()+timeout if timeout else None
     try:
         with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as original:
+            page_size=original.execute('pragma page_size').fetchone()[0]
+            def progress(status,remaining,total):
+                if deadline and time.monotonic()>deadline:raise TimeoutError('Backup deadline exceeded')
+                if maximum and total*page_size>maximum:raise ValueError('Backup exceeds established size cap')
             with closing(sqlite3.connect(temporary)) as copied:
                 with copied:
-                    original.backup(copied)
+                    original.backup(copied,pages=128,progress=progress,sleep=.05)
                     tables = {r[0] for r in copied.execute("select name from sqlite_master where type='table'")}
                     if not {'sessions', 'attempts'} <= tables:
                         raise ValueError('Это не база КСУ Контроль')

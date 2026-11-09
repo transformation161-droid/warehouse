@@ -22,6 +22,7 @@ def accessible(con, actor, site):
 
 
 def apply_changes(db, actor, batch, receipt_only=False, package_id=None):
+    if actor['role']=='viewer':fail('Только просмотр',403)
     from .offline import current_checklist, receipt, store_receipt, validate_package, canonical
     legacy_hash=digest(batch.model_dump_json())
     body_hash = digest(canonical(batch.model_dump(mode='json')))
@@ -190,7 +191,7 @@ def save_record(con, actor, collection, ident, payload, expected_version):
             fail('Реквизиты проверенной инвентаризации неизменяемы',409)
     if collection=='visits':
         assignee=con.execute('select * from users where id=? and active=1', (data['assignedTo'],)).fetchone()
-        if not assignee or not accessible(con,dict(assignee),site):
+        if not assignee or assignee['role']=='viewer' or not accessible(con,dict(assignee),site):
             fail('Исполнителю не назначен объект')
         data['assignee']=assignee['name']
         if not old and data['status']!='planned':

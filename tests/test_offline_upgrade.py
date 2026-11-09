@@ -36,8 +36,10 @@ finally:case.tearDown()
             self.assertEqual(process.returncode,0,process.stderr[-2000:])
             source=root/'previous.sqlite3'
             with closing(sqlite3.connect(source)) as con:before=fingerprints(con,tables=V2_TABLES)
-            Database(source);Database(source)
-            with closing(sqlite3.connect(source)) as con:
+            from server.release_schema import prepare_sqlite
+            prepare_sqlite(source,root/'upgraded',closed_backup=True)
+            target=root/'upgraded/ksu.sqlite3';Database(target);Database(target)
+            with closing(sqlite3.connect(target)) as con:
                 self.assertEqual(fingerprints(con,tables=V2_TABLES),before)
                 self.assertEqual(con.execute('select count(*) from operation_receipts').fetchone()[0],0)
                 self.assertEqual(con.execute('pragma integrity_check').fetchone()[0],'ok')
