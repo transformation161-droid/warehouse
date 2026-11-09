@@ -28,6 +28,8 @@ jobs:
   server:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CADDY_BIN: ${{ runner.temp }}/ksu-stage2-caddy
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,10 +39,24 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
-      - run: python deploy/get_caddy.py --output /tmp/ksu-caddy
-      - env:
-          CADDY_BIN: /tmp/ksu-caddy
-        run: python -m unittest discover -s tests -v
+      - name: Install verified TLS test proxy with bounded transient retries
+        run: |
+          python - <<'PY'
+          import os,time,urllib.error
+          from deploy.get_caddy import install
+          for attempt in range(3):
+              try:
+                  install(os.environ['CADDY_BIN'])
+                  break
+              except Exception as error:
+                  # Static public release only; expose the reason as an annotation, not a log URL.
+                  transient=isinstance(error,urllib.error.URLError) and (not isinstance(error,urllib.error.HTTPError) or error.code in (429,500,502,503,504))
+                  if not transient or attempt==2:
+                      print('::error title=Pinned TLS test dependency::'+type(error).__name__+': '+str(error).replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+                      raise SystemExit(1)
+                  time.sleep(2**attempt)
+          PY
+      - run: python -m unittest discover -s tests -v
       - name: Real PostgreSQL regressions and stage-2 header guards
         run: python -m tests.offline_stage1_environment --output var/offline-stage2-checks
       - run: |
