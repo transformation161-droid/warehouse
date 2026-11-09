@@ -1,0 +1,79 @@
+name: Offline release preparation
+on:
+  pull_request:
+    branches: [feat/offline-stage2-visit-sync]
+permissions:
+  contents: read
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python -m tests.release_upgrade
+      - run: python -m tests.offline_stage1_environment --release --output /tmp/release-pg-checks
+      - run: |
+          node --check offline/app.js
+          node --check offline/store.js
+          node --check offline/transport.js
+          node --check release_online/app.js
+          node --check release_online/sync.js
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Existing accounts, deployed online UI, offline restart and lost commit replies
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: python -u -m tests.offline_stage2 --release --backend "$BACKEND"
+  artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: docker build -f Dockerfile.offline-release --build-arg KSU_BUILD_SHA="$GITHUB_SHA" -t ksu-offline:rc .
+      - run: python -m tests.release_container --image ksu-offline:rc
+      - name: Independent large SQLite backup and restore within 0.5 CPU / 1 GiB
+        run: |
+          mkdir -p "$RUNNER_TEMP/ksu-synthetic"
+          chmod 777 "$RUNNER_TEMP/ksu-synthetic"
+          docker run --rm --network none --user 10001:10001 --cpus 0.5 --memory 1g --memory-swap 1g --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m -v "$PWD:/test-source:ro" -v "$RUNNER_TEMP/ksu-synthetic:/synthetic:rw" -e TMPDIR=/synthetic -e PYTHONPATH=/test-source -e KSU_SCHEMA_MODE=explicit-copy-migration --entrypoint python ksu-offline:rc -m tests.release_large_backup
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - shell: powershell
+        run: |
+          foreach ($file in @('tools/Prepare-Offline-Staging.ps1','tools/New-Offline-Backup.ps1')) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          }

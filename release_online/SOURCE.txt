@@ -1,0 +1,2 @@
+3e3771ec0dd93eba5cc16d83cb477002273315a4
+Online UI pinned to deployed pilot; prototype seed data removed; current account labels and offline entry added.

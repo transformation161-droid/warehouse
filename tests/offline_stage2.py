@@ -25,6 +25,16 @@ from experiments.offline_visit.lab import initialize as initialize_lab
 
 PHRASE='stage two synthetic local phrase'
 STORE='/offline-visit/store.js'
+RELEASE=False
+
+
+def release_fixture(f):
+    if RELEASE:
+        f['release']=True
+        f['logins']={'manager':'account-owner','inspector':'field-inspector'}
+        for role,login in f['logins'].items():
+            sql(f,'update users set username=? where id=?',(login,role))
+    return f
 
 
 @contextmanager
@@ -36,8 +46,8 @@ def fixture(backend):
             from tests.pg_environment import local_cluster
             with local_cluster() as cluster:
                 initialize(cluster['source']['admin'],'ksu_runtime','ksu_backup');migrate_sqlite(source,cluster['source']['admin'])
-                yield {'root':root,'database':'postgresql','admin':cluster['source']['admin'],'runtime':cluster['source']['runtime'],'accounts':accounts,'lab_id':lab_id}
-        else:yield {'root':root,'database':str(source),'accounts':accounts,'lab_id':lab_id}
+                yield release_fixture({'root':root,'database':'postgresql','admin':cluster['source']['admin'],'runtime':cluster['source']['runtime'],'accounts':accounts,'lab_id':lab_id})
+        else:yield release_fixture({'root':root,'database':str(source),'accounts':accounts,'lab_id':lab_id})
 
 
 def facts(f):
@@ -62,6 +72,9 @@ def server(f):
     origin=f'http://127.0.0.1:{port}'
     env={**os.environ,'KSU_DB':f['database'],'KSU_ORIGIN':origin,'KSU_SECURE_COOKIES':'0','KSU_OFFLINE_VISIT_LAB_ID':f['lab_id'],'KSU_WORK_DIR':str(f['root']/'work')}
     env.pop('KSU_DATABASE_URL',None)
+    if f.get('release'):
+        env.pop('KSU_OFFLINE_VISIT_LAB_ID',None)
+        env.update(KSU_OFFLINE_MODE='staging',KSU_OFFLINE_DEPLOYMENT_ID=f['lab_id'],KSU_OFFLINE_USER_IDS='inspector')
     if f['database']=='postgresql':env['KSU_DATABASE_URL']=f['runtime']
     with (f['root']/'api-private.log').open('w') as log:
         process=subprocess.Popen([sys.executable,'-m','server','run','--host','127.0.0.1','--port',str(port)],env=env,cwd=ROOT,stdout=log,stderr=log)
@@ -72,6 +85,17 @@ def server(f):
                     if opener.open(origin+'/api/health',timeout=.3).status==200:break
                 except OSError:time.sleep(.1)
             else:raise AssertionError('Synthetic API did not start')
+            if f.get('release'):
+                def switch_off():
+                    nonlocal process
+                    process.terminate();process.wait(timeout=15);env['KSU_OFFLINE_MODE']='off'
+                    process=subprocess.Popen([sys.executable,'-m','server','run','--host','127.0.0.1','--port',str(port)],env=env,cwd=ROOT,stdout=log,stderr=log)
+                    for _ in range(150):
+                        try:
+                            if opener.open(origin+'/api/health',timeout=.3).status==200:return
+                        except OSError:time.sleep(.1)
+                    raise AssertionError('Release kill-switch restart failed')
+                f['switch_off']=switch_off
             yield origin
         finally:process.terminate();process.wait(timeout=15)
 
@@ -89,7 +113,7 @@ class Browser:
     def close(self):
         if self.context:self.context.close();self.context=None
     def login(self,role='inspector'):
-        self.page.locator('#username').fill(role);self.page.locator('#password').fill(self.f['accounts'][role]);self.page.locator('#login').click()
+        self.page.locator('#username').fill(self.f.get('logins',{}).get(role,role));self.page.locator('#password').fill(self.f['accounts'][role]);self.page.locator('#login').click()
         if role=='inspector':expect(self.page.locator('#session-status')).to_contain_text('Сессия инспектора')
     def prepare(self):
         self.login();self.page.locator('#load-visits').click();expect(self.page.locator('#visit option')).to_have_count(1)
@@ -163,7 +187,9 @@ def full_visit(p,backend):
         # This exercises durable "sending" recovery without leaking an unresolved route task.
         cdp=b.context.new_cdp_session(page);cdp.send('Emulation.setScriptExecutionDisabled',{'value':True})
         for route in held_routes:route.abort('connectionreset')
-        b.close();page=b.open(offline=True);assert b.local()['queue']['batch']==pending['queue']['batch']
+        b.close()
+        if f.get('release'):f['switch_off']()
+        page=b.open(offline=True);assert b.local()['queue']['batch']==pending['queue']['batch']
         expect(page.locator('#sync-status')).to_have_text('Ожидает отправки')
         b.context.set_offline(False);page.locator('#sync').click();expect(page.locator('#sync-status')).to_have_text('Принято сервером',timeout=15000)
         accepted=b.local();assert accepted['queue']['receipt']['committed'] is True
@@ -175,7 +201,7 @@ def full_visit(p,backend):
         encrypted=page.evaluate('''async url=>{const {Vault,exportJSON}=await import(url);return exportJSON(await new Vault().export())}''',STORE)
         assert 'Stage2 confidential marker' not in encrypted and f['accounts']['inspector'] not in encrypted
         b.close();page=b.open(offline=True);expect(page.locator('#sync-status')).to_have_text('Принято сервером');assert b.local()['photos']==sealed['photos']
-        b.close();print('PASS: '+backend+' expired session, wrong account, lost photo/batch responses AFTER commit, receipt recovery, zero duplicates, offline accepted restart',flush=True)
+        b.close();print('PASS: '+backend+' expired session, wrong account, lost photo/batch responses AFTER commit, receipt recovery, zero duplicates, offline accepted restart'+(' including server kill-switch before receipt recovery' if f.get('release') else ''),flush=True)
 
 
 def refusal(p,backend,kind):
@@ -185,7 +211,7 @@ def refusal(p,backend,kind):
             old=json.loads(sql(f,"select data from records where collection='visits' and id='DEMO-stage2-visit'")[0][0]);old['goal']='ДЕМО · Изменено руководителем'
             # Use the actual manager API, never bypass record guards.
             b.context.set_offline(False)
-            client=b.context.request;login=client.post(origin+'/api/login',headers={'Origin':origin},data={'username':'manager','password':f['accounts']['manager']}).json()
+            client=b.context.request;login=client.post(origin+'/api/login',headers={'Origin':origin},data={'username':f.get('logins',{}).get('manager','manager'),'password':f['accounts']['manager']}).json()
             response=client.post(origin+'/api/changes',headers={'Origin':origin,'X-CSRF-Token':login['csrf']},data={'mutationId':secrets.token_hex(16),'changes':[{'collection':'visits','id':'DEMO-stage2-visit','expectedVersion':1,'data':old}]});assert response.status==200
             b.login()
         else:
@@ -202,7 +228,7 @@ def account_race(p,backend):
         b=Browser(p,f,origin);page=b.open();b.prepare();ids=b.fill();b.photo(ids[0]);b.seal();photo_id=b.local()['photos'][0]['id']
         def switch_cookie(route):
             response=route.fetch();assert response.status==404
-            login=b.context.request.post(origin+'/api/login',headers={'Origin':origin},data={'username':'manager','password':f['accounts']['manager']});assert login.status==200
+            login=b.context.request.post(origin+'/api/login',headers={'Origin':origin},data={'username':f.get('logins',{}).get('manager','manager'),'password':f['accounts']['manager']});assert login.status==200
             route.fulfill(response=response)
         page.route('**/api/receipts/'+photo_id,switch_cookie)
         before=facts(f);page.locator('#sync').click();expect(page.locator('#sync-status')).to_have_text('Ошибка')
@@ -230,7 +256,7 @@ def late_conflict(p,backend):
     with fixture(backend) as f,server(f) as origin:
         b=Browser(p,f,origin);page=b.open();b.prepare();ids=b.fill();b.photo(ids[0]);b.seal();sealed=b.local()
         manager=p.request.new_context(base_url=origin,extra_http_headers={'Origin':origin})
-        login=manager.post('/api/login',data={'username':'manager','password':f['accounts']['manager']}).json()
+        login=manager.post('/api/login',data={'username':f.get('logins',{}).get('manager','manager'),'password':f['accounts']['manager']}).json()
         def concurrent_change(route):
             old=json.loads(sql(f,"select data from records where collection='visits' and id='DEMO-stage2-visit'")[0][0]);old['goal']='ДЕМО · Изменено после загрузки фото'
             changed=manager.post('/api/changes',headers={'X-CSRF-Token':login['csrf']},data={'mutationId':secrets.token_hex(16),'changes':[{'collection':'visits','id':'DEMO-stage2-visit','expectedVersion':1,'data':old}]})
@@ -247,9 +273,31 @@ def late_conflict(p,backend):
         print('PASS: '+backend+' server expectedVersion conflict AFTER photo commit rolls back whole act; durable 409 and local photo retained',flush=True)
 
 
+def release_online(p,backend):
+    with fixture(backend) as f,server(f) as origin:
+        browser=p.chromium.launch(headless=True,executable_path=os.getenv('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox'])
+        try:
+            for role in ('manager','inspector'):
+                context=browser.new_context();page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+                page.goto(origin+'/');page.locator('#username').fill(f['logins'][role]);page.locator('#password').fill(f['accounts'][role]);page.locator('#login-form button').click()
+                expect(page.locator('.sidebar')).to_be_visible()
+                for section in ('sites','audits','schedule','findings','inventory','reports','settings'):
+                    page.locator('nav [data-nav="'+section+'"]').click()
+                    expect(page.locator('.workspace')).to_be_visible()
+                assert not errors,errors
+                assert 'calendar.js' not in page.content() and 'writeoff_analytics.js' not in page.content()
+                assert page.locator('.demo-badge').count()==0
+                if role=='inspector':expect(page.locator('a[href="/offline-visit/"]')).to_have_count(1)
+                context.close()
+        finally:browser.close()
+        print('PASS: '+backend+' deployed online navigation, both existing renamed accounts, no demo/extra feature UI',flush=True)
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--backend',choices=('sqlite','postgres'),required=True);args=parser.parse_args()
+    global RELEASE
+    parser=argparse.ArgumentParser();parser.add_argument('--backend',choices=('sqlite','postgres'),required=True);parser.add_argument('--release',action='store_true');args=parser.parse_args();RELEASE=args.release
     with sync_playwright() as p:
+        if RELEASE:release_online(p,args.backend)
         full_visit(p,args.backend)
         for kind in ('conflict','revoked'):refusal(p,args.backend,kind)
         account_race(p,args.backend);storage_failure(p,args.backend)

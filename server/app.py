@@ -31,6 +31,10 @@ DUMMY_PASSWORD=password_hash(secrets.token_urlsafe(24))
 
 
 def create_app(path=None, origin=None, secure=None):
+    release_policy=None
+    if os.getenv('KSU_OFFLINE_MODE') is not None:
+        from .offline_release import Policy
+        release_policy=Policy.environment()
     public_origin=(origin or os.getenv('KSU_ORIGIN','http://localhost:8000')).rstrip('/')
     secure_cookie=secure if secure is not None else os.getenv('KSU_SECURE_COOKIES','0')=='1'
     if public_origin.startswith('https://') and not secure_cookie:
@@ -105,12 +109,15 @@ def create_app(path=None, origin=None, secure=None):
                             (digest(token),time.time())).fetchone()
         if not row:fail('Войдите в свою учётную запись',401)
         actor=dict(row)
+        if release_policy:release_policy.routes(request.url.path)
         if request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=actor['id']:
             fail('Сессия принадлежит другому пользователю. Очередь сохранена.',403)
-        if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_lab_id',None):
-            fail('Другая тестовая установка. Очередь сохранена.',409)
+        if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_deployment_id',getattr(app.state,'offline_lab_id',None)):
+            fail('Другая установка приложения. Очередь сохранена.',409)
         if csrf and not secrets.compare_digest(request.headers.get('x-csrf-token',''),actor['csrf']):
             fail('Неверный защитный токен. Войдите повторно.',403)
+        if csrf and request.url.path in ('/api/offline/packages','/api/offline/changes') and hasattr(app.state,'offline_release'):
+            app.state.offline_release.authorize(actor)
         return actor
 
     def public_user(actor):
@@ -119,6 +126,8 @@ def create_app(path=None, origin=None, secure=None):
     @app.get('/api/health')
     def health():
         with db.connect() as con:con.execute('select 1').fetchone()
+        if release_policy:
+            return {'status':'ok','data':'application','build':os.getenv('KSU_RELEASE_BUILD_SHA','unknown'),'offline':release_policy.mode}
         return {'status':'ok','data':'demonstration'}
 
     @app.post('/api/login')
@@ -163,7 +172,10 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect(actor) as con:return db.snapshot(con,actor)
 
     @app.post('/api/changes')
-    def changes(body:Changes,request:Request):return apply_changes(db,auth(request,True),body)
+    def changes(body:Changes,request:Request):
+        actor=auth(request,True)
+        if release_policy:release_policy.plan_permissions(actor,body)
+        return apply_changes(db,actor,body)
 
     from .models import OfflinePackage, OfflineChanges
     from . import offline
@@ -198,7 +210,9 @@ def create_app(path=None, origin=None, secure=None):
 
     @app.post('/api/offline/changes')
     def offline_changes(body:OfflineChanges,request:Request):
-        value=apply_changes(db,auth(request,True),body,receipt_only=True,package_id=body.packageId)
+        actor=auth(request,True)
+        if release_policy:release_policy.plan_permissions(actor,body)
+        value=apply_changes(db,actor,body,receipt_only=True,package_id=body.packageId)
         return JSONResponse(value,status_code=value['status'])
 
     @app.post('/api/admin/backup')
@@ -269,6 +283,7 @@ def create_app(path=None, origin=None, secure=None):
     @app.post('/api/media')
     def upload(payload:MediaFile,request:Request):
         actor=auth(request,True);site=payload.siteId;content=payload.content
+        if payload.mutationId and hasattr(app.state,'offline_release'):app.state.offline_release.authorize(actor)
         with db.connect(actor) as con:
             if not accessible(con,actor,site) or not con.execute("select 1 from records where collection='sites' and id=?",(site,)).fetchone():fail('Нет доступа к объекту',403)
         try:
@@ -559,11 +574,15 @@ def create_app(path=None, origin=None, secure=None):
     install_writeoff_analytics(app,db,auth)
     def make_asset(filename):
         def asset():
-            return FileResponse(ROOT/filename)
+            if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
+            return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
     for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
-    if os.getenv('KSU_OFFLINE_VISIT_LAB_ID'):
+    if release_policy:
+        from .offline_release import install as install_release
+        install_release(app,auth,release_policy)
+    elif os.getenv('KSU_OFFLINE_VISIT_LAB_ID'):
         from .offline_visit import install as install_offline_visit
         install_offline_visit(app,auth,os.environ['KSU_OFFLINE_VISIT_LAB_ID'])
     return app
