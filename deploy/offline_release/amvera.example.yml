@@ -1,0 +1,12 @@
+# TEMPLATE ONLY. Do not replace active amvera.yml before approved rollout.
+# KSU_BUILD_SHA must be supplied as a Docker build argument by a verified delivery path.
+meta:
+  environment: docker
+  toolchain:
+    name: docker
+    version: latest
+build:
+  dockerfile: Dockerfile.offline-release
+run:
+  persistenceMount: /data
+  containerPort: 8000

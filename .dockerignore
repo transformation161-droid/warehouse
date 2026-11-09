@@ -22,3 +22,17 @@
 !Dockerfile.postgres
 !server/postgres/
 !server/postgres/*.sql
+!Dockerfile.offline-release
+!offline/
+!offline/*.js
+!offline/*.css
+!offline/*.html
+!offline/*.svg
+!offline/*.webmanifest
+!deploy/offline_release/
+!deploy/offline_release/*.py
+!release_online/
+!release_online/*.js
+!release_online/*.html
+!release_online/*.css
+!release_online/*.txt

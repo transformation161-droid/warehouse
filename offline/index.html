@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102d50"><title>КСУ · Офлайн-проверка</title>
+<link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./ksu.css">
+<link rel="stylesheet" href="./prototype.css"><script type="module" src="./app.js"></script></head>
+<body><p id="environment" role="status"></p>
+<main class="workspace"><div class="page-heading"><h1>ИНСТРАКТ · КСУ Контроль</h1><p>Офлайн-проверка назначенного выезда</p></div>
+<div class="notice">Доступ предоставляется действующей учётной записью. Локальная фраза защищает сохранённый выезд на этом устройстве.</div>
+<p id="message" role="status" aria-live="polite"></p><p id="worker-status"></p><button id="update" hidden>Обновить интерфейс безопасно</button>
+<section id="auth" class="card"><h2>Серверная сессия инспектора</h2>
+<form id="login-form"><label>Логин<input id="username" autocomplete="off" required></label><label>Пароль КСУ<input id="password" type="password" autocomplete="off" required></label><button class="btn secondary" id="login">Войти на сервер</button></form>
+<p id="session-status">Для восстановления локальной копии интернет и серверный вход не нужны.</p><button id="logout" class="btn secondary">Выйти с сервера, сохранить локальную копию</button></section>
+<section id="unlock" class="card"><h2>Шифрованный локальный профиль</h2><label>Локальная фраза — от 12 символов, не пароль КСУ<input id="phrase" type="password" autocomplete="off" minlength="12"></label>
+<button id="open" class="btn primary">Создать / разблокировать профиль</button><p>Фраза нужна после закрытия браузера. Сервер её не хранит и не восстанавливает.</p></section>
+<section id="editor" hidden><section class="card"><h2>Подготовка к выезду</h2>
+<button id="load-visits" class="btn secondary">Показать назначенные выезды</button><label>Выезд<select id="visit"></select></label><button id="prepare" class="btn primary">Сохранить выезд для работы без сети</button>
+<p id="package-status"></p><p id="local-status"></p><p id="sync-status" role="status" aria-live="polite"></p><p id="queue-detail"></p>
+<button id="sync" class="btn primary">Отправить / проверить receipt</button><button id="lock" class="btn secondary">Заблокировать</button><button id="export" class="btn secondary">Скачать зашифрованную копию</button>
+<label>Автоблокировка, минут<input id="minutes" type="number" min="1" max="60" value="10"></label></section>
+<section class="card"><h2 id="visit-title">Проверка КСУ</h2><div id="questions"></div>
+<label>Фото для нарушения<select id="photo-question"></select></label><p>Одно фото на нарушение, до 20 фото на выезд. JPEG/PNG/WebP до 10 МБ, после сжатия до 3 МБ.</p>
+<div class="photo-actions"><button id="take-photo" class="btn secondary" type="button">Сделать фото</button><button id="choose-photo" class="btn secondary" type="button">Из галереи</button></div>
+<input id="camera-photo" type="file" accept="image/*" capture="environment" hidden><input id="photo" type="file" accept="image/*" hidden><div id="photos"></div>
+<button id="save" class="btn primary">Сохранить на устройстве</button><button id="complete" class="btn primary">Завершить и поставить в очередь</button>
+</section></section></main></body></html>

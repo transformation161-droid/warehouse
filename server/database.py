@@ -191,6 +191,10 @@ class Database:
     def import_metadata(self,con,signature):return con.execute('select raw_json from imports where hash=?',(signature,)).fetchone()[0]
     def __init__(self, path):
         self.path = Path(path)
+        if os.getenv('KSU_SCHEMA_MODE')=='verified' or os.getenv('KSU_OFFLINE_MODE') is not None:
+            from .release_schema import inspect_sqlite
+            if inspect_sqlite(self.path)['version']!=3:raise ValueError('Explicit offline schema migration required before release startup')
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as con:
             con.executescript(SCHEMA)
@@ -248,7 +252,7 @@ class Database:
             state[collection].sort(key=lambda item: (0,int(item['id'][1:]))
                                    if item['id'].startswith(prefix) and item['id'][1:].isdigit()
                                    else (1,item['createdAt']))
-        state['meta'] = {'mode':'demo', 'name':'ИНСТРАКТ · КСУ Контроль'}
+        state['meta'] = {'mode':'work' if os.getenv('KSU_OFFLINE_MODE') is not None else 'demo', 'name':'ИНСТРАКТ · КСУ Контроль'}
         state['assignees'] = [
             {'id':u['id'],'name':u['name'], 'siteIds':
              [s['id'] for s in state['sites']] if u['role']=='manager' else

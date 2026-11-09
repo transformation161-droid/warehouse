@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337 AS python-runtime
+FROM postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+COPY --from=python-runtime /usr/local/ /usr/local/
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    KSU_SCHEMA_MODE=verified KSU_REQUIRE_INITIALIZED=1 KSU_SECURE_COOKIES=1 \
+    KSU_DB_MAX_BYTES=268435456 KSU_DATA_MAX_BYTES=2147483648 KSU_CONCURRENCY_LIMIT=16
+RUN rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/pgdg.sources && apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core libexpat1 libbz2-1.0 liblzma5 && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt constraints.txt ./
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -s /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    pip install --no-cache-dir -r requirements.txt
+COPY server/*.py ./server/
+COPY server/postgres/*.sql ./server/postgres/
+COPY offline/ ./offline/
+COPY release_online/ ./release_online/
+COPY deploy/offline_release/ ./deploy/offline_release/
+ARG KSU_BUILD_SHA
+RUN python -c "import re,sys; value=sys.argv[1]; assert re.fullmatch('[a-f0-9]{40}',value); open('RELEASE_SHA','w').write(value)" "$KSU_BUILD_SHA" \
+    && chmod -R a+rX /app && groupadd --gid 10001 ksu && useradd --uid 10001 --gid 10001 --no-create-home ksu
+LABEL org.opencontainers.image.revision=$KSU_BUILD_SHA
+USER 10001:10001
+EXPOSE 8000
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["python","-m","deploy.offline_release.runtime"]
