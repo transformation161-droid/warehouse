@@ -285,6 +285,12 @@ def release_online(p,backend):
                 for section in ('sites','audits','schedule','findings','inventory','reports','settings'):
                     page.locator('nav [data-nav="'+section+'"]').click()
                     expect(page.locator('.workspace')).to_be_visible()
+                if role=='manager':
+                    with page.expect_popup() as printed:page.evaluate('printWeeklyReport()')
+                    report=printed.value;expect(report).to_have_title('ИНСТРАКТ | Складской учет · Недельная сводка')
+                    expect(report.locator('img[alt="ИНСТРАКТ"]')).to_be_visible()
+                    assert report.locator('img').evaluate('(img)=>img.complete&&img.naturalWidth>0')
+                    report.close()
                 assert not errors,errors
                 assert 'calendar.js' not in page.content() and 'writeoff_analytics.js' not in page.content()
                 assert page.locator('.demo-badge').count()==0
