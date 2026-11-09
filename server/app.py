@@ -105,6 +105,10 @@ def create_app(path=None, origin=None, secure=None):
                             (digest(token),time.time())).fetchone()
         if not row:fail('Войдите в свою учётную запись',401)
         actor=dict(row)
+        if request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=actor['id']:
+            fail('Сессия принадлежит другому пользователю. Очередь сохранена.',403)
+        if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_lab_id',None):
+            fail('Другая тестовая установка. Очередь сохранена.',409)
         if csrf and not secrets.compare_digest(request.headers.get('x-csrf-token',''),actor['csrf']):
             fail('Неверный защитный токен. Войдите повторно.',403)
         return actor
@@ -559,4 +563,7 @@ def create_app(path=None, origin=None, secure=None):
         return asset
     for route,filename in [('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
+    if os.getenv('KSU_OFFLINE_VISIT_LAB_ID'):
+        from .offline_visit import install as install_offline_visit
+        install_offline_visit(app,auth,os.environ['KSU_OFFLINE_VISIT_LAB_ID'])
     return app
