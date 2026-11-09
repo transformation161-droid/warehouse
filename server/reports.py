@@ -1,5 +1,8 @@
 """Reports are recomputed from authorized server records, never client totals."""
 import csv
+import base64
+import os
+import re
 import io
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -12,7 +15,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportImage
 from .service import fail
 
 
@@ -120,6 +123,10 @@ def export(report, extension):
     cell=lambda x:Paragraph(escape(str(x)),style)
     table=Table([[cell(x) for x in row] for row in [headers]+rows],repeatRows=1,colWidths=[750/len(headers)]*len(headers))
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8f1fa')),('GRID',(0,0),(-1,-1),.3,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP')]))
-    story=[cell('ИНСТРАКТ · КСУ Контроль · ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ'),cell(report['period']),Spacer(1,14),table,Spacer(1,12),cell('Первичные расхождения не являются установленным ущербом. Утверждённый итог и взыскано показаны отдельно.')]
+    story=[cell('ИНСТРАКТ | Складской учет'+('' if os.getenv('KSU_OFFLINE_MODE') is not None else ' · ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ')),cell(report['period']),Spacer(1,14),table,Spacer(1,12),cell('Первичные расхождения не являются установленным ущербом. Утверждённый итог и взыскано показаны отдельно.')]
+    if os.getenv('KSU_OFFLINE_MODE') is not None:
+        logo=(Path(__file__).resolve().parent.parent/'assets/instrakt-logo.svg').read_text()
+        original=base64.b64decode(re.search(r'data:image/png;base64,([^\"]+)',logo).group(1))
+        story.insert(0,ReportImage(io.BytesIO(original),width=100,height=48))
     SimpleDocTemplate(out,pagesize=landscape(A4),leftMargin=40,rightMargin=40).build(story)
     return out.getvalue(),'application/pdf'
