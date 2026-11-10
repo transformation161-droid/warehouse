@@ -25,7 +25,7 @@ if ($inputPath) { $privatePaths+=Split-Path -Parent $inputPath }
 foreach ($path in $privatePaths) {
     $ancestor=$path
     while ($ancestor) {
-        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Reparse points in private paths are forbidden.' }
+        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -Force -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Reparse points in private paths are forbidden.' }
         if (Test-Path -LiteralPath (Join-Path $ancestor '.git')) { throw 'Secrets/data/reports must stay outside Git.' }
         $next=Split-Path -Parent $ancestor;if ($next -eq $ancestor) { break };$ancestor=$next
     }
