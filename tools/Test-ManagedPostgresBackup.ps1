@@ -6,11 +6,14 @@ param(
     [string]$Image='ksu-managed:rc'
 )
 $ErrorActionPreference='Stop'
-$source=(Get-Item -LiteralPath $Backup).FullName;$target=[IO.Path]::GetFullPath($OutputDirectory)
+$item=Get-Item -LiteralPath $Backup
+if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Regular private backup file required.' }
+$source=$item.FullName;$target=[IO.Path]::GetFullPath($OutputDirectory)
 if ([IO.Path]::GetExtension($source) -ne '.ksubackup' -or (Test-Path -LiteralPath $target)) { throw 'Trusted .ksubackup and NEW private output required.' }
 foreach ($path in @((Split-Path -Parent $source),(Split-Path -Parent $target))) {
     $ancestor=$path
     while ($ancestor) {
+        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Reparse points in private paths are forbidden.' }
         if (Test-Path -LiteralPath (Join-Path $ancestor '.git')) { throw 'Backups/recovery files must stay outside Git.' }
         $next=Split-Path -Parent $ancestor;if ($next -eq $ancestor) { break };$ancestor=$next
     }

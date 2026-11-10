@@ -9,11 +9,13 @@ param(
     [string]$Image='ksu-managed:rc'
 )
 $ErrorActionPreference='Stop'
-$config=(Get-Item -LiteralPath $EnvFile).FullName;$configDirectory=Split-Path -Parent $config
+$configItem=Get-Item -LiteralPath $EnvFile
+if ($configItem.PSIsContainer -or ($configItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Regular private env file required.' }
+$config=$configItem.FullName;$configDirectory=Split-Path -Parent $config
 $target=[IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $target) { throw 'New private output directory required; no overwrite.' }
 $inputPath=''
-if ($Source) { $item=Get-Item -LiteralPath $Source;if ($item.PSIsContainer) { throw 'Regular private input file required.' };$inputPath=$item.FullName }
+if ($Source) { $item=Get-Item -LiteralPath $Source;if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Regular private input file required.' };$inputPath=$item.FullName }
 if ($Operation -in @('bootstrap','migrate','verify','restore') -and -not $inputPath) { throw 'Explicit private input file required.' }
 if ($Operation -eq 'migrate') {
     foreach ($suffix in @('-wal','-shm','-journal')) { if (Test-Path -LiteralPath ($inputPath+$suffix)) { throw 'Closed independent SQLite backup required.' } }
@@ -23,6 +25,7 @@ if ($inputPath) { $privatePaths+=Split-Path -Parent $inputPath }
 foreach ($path in $privatePaths) {
     $ancestor=$path
     while ($ancestor) {
+        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Reparse points in private paths are forbidden.' }
         if (Test-Path -LiteralPath (Join-Path $ancestor '.git')) { throw 'Secrets/data/reports must stay outside Git.' }
         $next=Split-Path -Parent $ancestor;if ($next -eq $ancestor) { break };$ancestor=$next
     }

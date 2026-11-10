@@ -19,6 +19,10 @@ try {
     Refused { & $tool -Operation preflight -EnvFile (Join-Path $PSScriptRoot '../requirements.txt') -OutputDirectory $output } 'outside Git'
     $restore=Join-Path $PSScriptRoot '../tools/Test-ManagedPostgresBackup.ps1'
     Refused { & $restore -Backup $source -OutputDirectory $output } 'Trusted .ksubackup'
+    $junction=Join-Path $root 'junction';New-Item -ItemType Junction -Path $junction -Target $root | Out-Null
+    try {
+        Refused { & $tool -Operation backup -EnvFile $envFile -OutputDirectory (Join-Path $junction 'escaped-output') } 'Reparse points'
+    } finally { [IO.Directory]::Delete($junction) }
     if (Test-Path -LiteralPath $output) { throw 'Rejected operation created output' }
     Write-Host 'PASS: owner guards reject live inputs, Git paths and overwrites before Docker/files/resources'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
