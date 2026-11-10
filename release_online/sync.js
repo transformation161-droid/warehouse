@@ -41,7 +41,7 @@ function showLogin(message=''){
 
 async function enter(){
   db=await api('state');ui.role=sessionUser.role;ui.page='home';ui.siteId=null;ui.wizard=false;ui.modal=null;
-  if(sessionUser.role==='viewer'){pending=null;ui.draft=null;connected=true;initialized=true;renderViewer();return}
+  if(isReadOnly()){pending=null;ui.draft=null;connected=true;initialized=true;render();return}
   pending=await queueStore(null,true);
   const draft=await queueStore(null,true,'draft');
   if(draft&&!pending){ui.draft=draft.data;ui.activeVisitId=draft.visit;ui.wizard=true;ui.page='audits'}
@@ -58,28 +58,31 @@ document.addEventListener('submit',async e=>{
 
 const originalRender=render;
 render=function(){
-  if(sessionUser?.role==='viewer'){renderViewer();return}
   if(!sessionUser)return;
   originalRender();
   if(sessionUser.role==='inspector'){const link=document.createElement('a');link.href='/offline-visit/';link.className='btn secondary';link.textContent='Офлайн-проверка';$('.workspace').prepend(link)}
   const note=document.createElement('div');note.id='sync-status';note.className='sync-status no-print';note.setAttribute('role','status');
-  note.innerHTML=pending?`<strong>${sending?'Сохраняем…':'Изменения ещё не подтверждены сервером'}</strong> <button class="btn secondary" data-action="retry-save">Повторить</button><button class="btn secondary" data-action="recover-save">Скачать копию</button><button class="btn secondary" data-action="discard-save">Отменить отправку</button>`:connected?'Общая база · синхронизировано':'Нет связи · редактирование доступно с сохранением запроса для повторной отправки';
+  note.innerHTML=isReadOnly()?'Общая база · Только просмотр · разрешённые объекты':pending?`<strong>${sending?'Сохраняем…':'Изменения ещё не подтверждены сервером'}</strong> <button class="btn secondary" data-action="retry-save">Повторить</button><button class="btn secondary" data-action="recover-save">Скачать копию</button><button class="btn secondary" data-action="discard-save">Отменить отправку</button>`:connected?'Общая база · синхронизировано':'Нет связи · редактирование доступно с сохранением запроса для повторной отправки';
   $('.workspace').prepend(note);
   if(ui.role!=='manager')document.querySelectorAll('[data-action="add-site"],[data-action="edit-site"],[data-action="add-question"],[data-action="add-visit"],[data-action="edit-visit"],[data-action="cancel-visit"],[data-action="change-stage"]').forEach(x=>x.remove());
   document.querySelectorAll('[data-action="start-audit"][data-visit]').forEach(x=>{if(db.visits.find(v=>v.id===x.dataset.visit)?.assignedTo!==sessionUser.id)x.remove()});
-  document.querySelectorAll('[data-action="finding-detail"]').forEach(x=>{const f=db.findings.find(f=>f.id===x.dataset.id);if(ui.role!=='manager'&&f?.createdBy!==sessionUser.id)x.textContent='Просмотр'});
+  document.querySelectorAll('[data-action="finding-detail"]').forEach(x=>{const f=db.findings.find(f=>f.id===x.dataset.id);if(ui.role==='viewer'){if(x.textContent==='Изменить')x.textContent='Просмотр'}else if(ui.role!=='manager'&&f?.createdBy!==sessionUser.id)x.textContent='Просмотр'});
   if(ui.page==='reports'){
     const actions=$('.page-actions');actions.insertAdjacentHTML('beforeend','<button class="btn secondary" data-action="report-xlsx">XLSX</button><button class="btn secondary" data-action="report-pdf">Скачать PDF</button>');
   }
+  applyReadPermissions();
 };
+const sharedRenderModal=renderModal;
+renderModal=function(){sharedRenderModal();applyReadPermissions($('#dialog-root'))};
 
 async function uploadPhoto(photo,siteId){
+  if(isReadOnly())throw Error('Только просмотр');
   if(!photo?.startsWith('data:'))return photo||'';
   return (await api('media',{method:'POST',body:JSON.stringify({siteId,content:photo.split(',')[1]})})).url;
 }
 
 async function sendPending(){
-  if(!pending||sending||!sessionUser)return;
+  if(!pending||sending||!sessionUser||isReadOnly())return;
   sending=true;render();
   try{
     // Persist the exact request before sending. Retries use the same mutation id.
@@ -95,6 +98,7 @@ async function sendPending(){
 }
 
 async function mutate(fn,msg){
+  if(isReadOnly())return toast('Только просмотр: изменения запрещены',true);
   if(!sessionUser||pending||sending)return toast('Сначала завершите отправку предыдущих изменений',true);
   const before=structuredClone(db),recovery={draft:structuredClone(ui.draft),invRows:structuredClone(ui.invRows),invMeta:structuredClone(ui.invMeta)};
   try{
@@ -113,8 +117,9 @@ async function mutate(fn,msg){
   }catch(error){db=before;Object.assign(ui,recovery);toast('Не удалось сохранить копию на устройстве: '+error.message+'. Скачайте запрос перед закрытием страницы.',true);render()}
 }
 
-function downloadServerReport(extension,kind){
-  const params=new URLSearchParams({...ui.report,...(kind?{kind}:{})});
+function downloadServerReport(extension,kind,extra={}){
+  const params=new URLSearchParams({...ui.report,...(kind?{kind}:{}),...extra});
+  if(isReadOnly())return downloadReadReport(extension,params);
   const link=document.createElement('a');link.href='/api/reports/'+extension+'?'+params;link.download='';document.body.append(link);link.click();link.remove();
 }
 exportReport=()=>downloadServerReport('csv');
@@ -147,7 +152,8 @@ findingForm=function(f){
   originalFindingForm(f);
   const form=$('#finding-form');form.insertAdjacentHTML('beforeend',`<input name="photo" type="hidden" value="${attr(f?.photo||'')}"><input name="evidence" type="hidden" value="${attr(f?.evidence||'')}"><div class="field section-gap"><label>Фото при выявлении</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="photo"></div><div class="field section-gap"><label>Фото-подтверждение устранения (обязательно для закрытия)</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="evidence">${f?.evidence?`<img class="photo-preview" src="${attr(f.evidence)}" alt="Подтверждение устранения">`:''}</div>`);
   if(f){$('.modal-footer').insertAdjacentHTML('afterbegin',`<button class="btn secondary" data-action="history" data-collection="findings" data-id="${attr(f.id)}">История</button>`)}
-  if(f&&ui.role!=='manager'&&f.createdBy!==sessionUser.id){form.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=true);$('[data-action="save-finding"]').remove()}
+  if(f&&ui.role!=='manager'&&f.createdBy!==sessionUser.id){form.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=true);$('[data-action="save-finding"]')?.remove()}
+  applyReadPermissions($('#dialog-root'));
 };
 
 const stages={primary:'Первичное расхождение',confirmed:'Подтверждено',corrected:'Снято корректировкой',investigation:'Расследование',approved:'Утверждённый итог',recovered:'Взыскано'};
@@ -157,6 +163,7 @@ inventoryDetail=function(id){
   baseInventoryDetail(id);const inv=db.inventories.find(x=>x.id===id);if(!inv)return;
   $('.modal-body').insertAdjacentHTML('afterbegin',`<div class="notice">Стадия: <strong>${esc(stages[inv.stage||'primary'])}</strong>${inv.decision?` · ${esc(inv.decision)}`:''}</div>`);
   $('.modal-footer').insertAdjacentHTML('afterbegin',`<button class="btn secondary" data-action="history" data-collection="inventories" data-id="${attr(id)}">История</button>${ui.role==='manager'&&(stageNext[inv.stage||'primary']||[]).length?`<button class="btn secondary" data-action="change-stage" data-id="${attr(id)}">Стадия расхождений</button>`:''}`);
+  applyReadPermissions($('#dialog-root'));
 };
 
 async function showHistory(collection='',id=''){
@@ -216,7 +223,7 @@ setInterval(async()=>{
 },3000);
 let lastDraft='';
 setInterval(async()=>{
-  if(!sessionUser||!initialized||sending)return;
+  if(!sessionUser||!initialized||sending||isReadOnly())return;
   const draft=ui.wizard&&ui.draft?{data:ui.draft,visit:ui.activeVisitId}:null;
   const serialized=stable(draft);
   if(serialized===lastDraft)return;
@@ -227,3 +234,25 @@ window.addEventListener('beforeunload',e=>{if(pending||sending||ui.wizard||docum
 (async()=>{try{sessionUser=await api('me');await enter()}catch{showLogin()}})();
 
 window.addEventListener('pageshow',event=>{if(event.persisted){sessionUser=null;showLogin('Подтвердите текущую сессию. Очереди других аккаунтов не загружаются.')}});
+
+// Read exports independently authenticate and recheck site ACLs at the time of download.
+async function downloadReadReport(extension,params){
+ try{
+  const response=await fetch('/api/reports/'+extension+'?'+params,{credentials:'same-origin',headers:{'X-KSU-Expected-User':sessionUser.id}});
+  if(!response.ok){await api('me');throw Error('Выгрузка недоступна для текущего доступа')}
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='Складской_учет.'+extension;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(error){toast(error.message,true)}
+}
+const editableInventoryCSV=inventoryCSV;
+inventoryCSV=function(id){return isReadOnly()?downloadServerReport('csv','inventory-detail',{inventoryId:id}):editableInventoryCSV(id)};
+// Printing uses the common renderer, after a fresh session/ACL check. A previously
+// delivered screen cannot be revoked, but it cannot authorize a new export.
+for(const name of ['printAudit','printWeeklyReport']){
+ const shared=window[name];
+ window[name]=async function(...args){
+  if(!isReadOnly())return shared(...args);
+  try{db=await api('state');if(name==='printAudit'&&!db.inspections.some(row=>row.id===args[0]))throw Error('Акт недоступен');return shared(...args)}
+  catch(error){toast(error.message,true)}
+ };
+}

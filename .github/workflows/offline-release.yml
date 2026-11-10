@@ -1,7 +1,7 @@
 name: Viewer branding and scheduled backup acceptance
 on:
   pull_request:
-    branches: [release/offline-mvp-candidate]
+    branches: [release/offline-mvp-candidate, release/viewer-branding-backup]
 permissions:
   contents: read
 jobs:
@@ -49,6 +49,13 @@ jobs:
         run: |
           python -u -m tests.offline_stage2 --release --backend "$BACKEND"
           python -u -m tests.viewer_browser --backend "$BACKEND"
+      - name: Shared UI visual evidence (synthetic only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-viewer-${{ matrix.backend }}
+          path: var/viewer-ui/**/*.png
+          retention-days: 7
   artifact:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -89,3 +96,6 @@ jobs:
           $task=& .\tools\Register-OwnerBackup.ps1 -Origin 'https://127.0.0.1:8017' -At '21:00' -PlanOnly
           if (-not $task.Settings.StartWhenAvailable -or $task.Settings.MultipleInstances -ne 2 -or $task.Principal.RunLevel -ne 0 -or $task.Triggers[0].DaysInterval -ne 1) { throw 'Unsafe task settings' }
           if ($task.Actions[0].Arguments -match 'password|credential|secret' -or $task.Actions[0].Arguments -notmatch 'Invoke-OwnerBackup.ps1') { throw 'Secrets or wrong executable in task arguments' }
+      - name: Acceptance pilot/off native Docker arguments and ownership guard
+        shell: powershell
+        run: ./tests/windows_acceptance.Tests.ps1

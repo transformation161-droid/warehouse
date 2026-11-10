@@ -7,7 +7,11 @@ if ($ViewerAccess) { $state.viewerAccess=$ViewerAccess }
 function Invoke-Docker { & docker @args;if ($LASTEXITCODE -ne 0) { throw 'Synthetic operation failed; do not touch any existing installation.' } }
 $names=Invoke-Docker ps -a --filter "name=^/$($state.name)$" --format '{{.Names}}'
 if ($names) {
-    $label=Invoke-Docker inspect --format '{{index .Config.Labels "ksu.synthetic.acceptance"}}' $state.name
+    # Read JSON instead of a Go template: Windows PowerShell 5.1 strips the
+    # inner quotes of --format when passing them to native docker.exe.
+    $containers=@(Invoke-Docker container inspect $state.name | ConvertFrom-Json)
+    if ($containers.Count -ne 1 -or $containers[0].Name -ne ('/'+$state.name)) { throw 'Unexpected acceptance container identity.' }
+    $label=$containers[0].Config.Labels.'ksu.synthetic.acceptance'
     if ($label -ne $state.id) { throw 'Container does not belong to this acceptance profile.' }
     Invoke-Docker stop $state.name | Out-Null
     if ($Mode -ne 'stop') { Invoke-Docker rm $state.name | Out-Null } # Stateless own shell only; named data volume retained.
