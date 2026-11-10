@@ -43,3 +43,7 @@
 !Dockerfile.offline-acceptance
 !tests/
 !tests/release_acceptance_seed.py
+
+!Dockerfile.managed-postgres
+!deploy/managed_postgres/
+!deploy/managed_postgres/*.py

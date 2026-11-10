@@ -75,7 +75,8 @@ def backup_database(dsn,destination):
             if not connection.execute('select pg_try_advisory_lock(140014)').fetchone()[0]:raise BackupError('Another database backup is active')
             validate_schema(connection)
             snapshot=connection.execute('select pg_export_snapshot()').fetchone()[0]
-            run_tool('pg_dump',['--format=custom','--compress=0','--no-owner','--no-acl','--schema=ksu',
+            row_security=[] if connection.execute('select rolbypassrls from pg_roles where rolname=current_user').fetchone()[0] else ['--enable-row-security']
+            run_tool('pg_dump',[*row_security,'--format=custom','--compress=0','--no-owner','--no-acl','--schema=ksu',
                 '--exclude-table-data=ksu.sessions','--exclude-table-data=ksu.attempts','--snapshot='+snapshot,
                 '--lock-wait-timeout=15000','--file='+str(dump)],dsn,dump,maximum)
             manifest={'format':'ksu-pg-backup-v1','schema_version':SCHEMA_VERSION,'dump_sha256':checksum(dump),

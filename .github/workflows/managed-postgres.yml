@@ -1,0 +1,89 @@
+name: Managed PostgreSQL production candidate
+on:
+  pull_request:
+    branches: [release/production-candidate]
+permissions:
+  contents: read
+concurrency:
+  group: managed-postgres-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  preservation-and-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Accepted source preservation, TLS gates, migrations and SQLite compatibility
+        run: python -m unittest -v tests.test_managed_pg tests.test_production_candidate tests.test_pg_finalize tests.test_offline_release tests.test_release_v3_upgrade tests.test_viewer tests.test_backup_job tests.test_api
+      - run: python -m tests.release_upgrade
+  real-postgres-and-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Export managed-only source delivery
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -m deploy.release_candidate.bundle --profile postgresql --ref "$SOURCE_SHA" --output "$RUNNER_TEMP/managed-source"
+          python -m deploy.release_candidate.bundle --verify "$RUNNER_TEMP/managed-source"
+          docker build -f "$RUNNER_TEMP/managed-source/Dockerfile.managed-postgres" -t ksu-managed:rc "$RUNNER_TEMP/managed-source"
+      - name: Extract pinned native PostgreSQL clients, no system package installation
+        run: |
+          python - <<'PY'
+          import os
+          from tests.pg_tools import prepare
+          from tests.pg_environment import IMAGE
+          values=prepare(IMAGE,os.path.join(os.environ['RUNNER_TEMP'],'pg17-clients'))
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              for key,value in values.items():out.write(key+'='+value+'\n')
+          PY
+      - name: Independent TLS clusters, exact release image, migration/restore and all PostgreSQL API contracts
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python -u -m tests.managed_pg_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --contracts --output "$RUNNER_TEMP/managed-runtime.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: managed-source-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/managed-source/
+          include-hidden-files: true
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: managed-runtime
+          path: ${{ runner.temp }}/managed-runtime.json
+          retention-days: 14
+  windows-owner-tools:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - shell: powershell
+        run: |
+          foreach ($file in @('tools/Invoke-ManagedPostgres.ps1','tools/Test-ManagedPostgresBackup.ps1')) {
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ };exit 1 }
+          }
+          ./tests/windows_backup_policy.Tests.ps1
+          ./tests/windows_managed_guards.Tests.ps1
