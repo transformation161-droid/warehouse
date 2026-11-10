@@ -86,9 +86,13 @@ def run(image,expected_sha):
                 start();health(client,True);stop()
                 caught=json.loads((data/'backup-v4/status.json').read_text())['lastSuccess'];assert caught['file']!=last['file']
                 protected=data/'backup-v4'/caught['file'];digest=checksum(protected)
+                # Make another daily run due before imposing a full-volume limit.
+                due=json.loads((data/'backup-v4/status.json').read_text())
+                due['lastSuccess']['verifiedAt']=(datetime.now(timezone.utc)-timedelta(hours=25)).isoformat()
+                (data/'backup-v4/status.json').write_text(json.dumps(due))
                 start('1');value=health(client,False);assert value['status']=='ok';stop()
                 failed=json.loads((data/'backup-v4/status.json').read_text())
-                assert failed['lastSuccess']==caught and checksum(protected)==digest
+                assert failed['lastSuccess']==due['lastSuccess'] and checksum(protected)==digest
             with closing(sqlite3.connect(source)) as con:assert fingerprints(con)==before
             return {'synthetic_only':True,'source_sha':expected_sha,'sqlite_version':actual['sqlite_version'],
                 'source_bytes':source.stat().st_size,

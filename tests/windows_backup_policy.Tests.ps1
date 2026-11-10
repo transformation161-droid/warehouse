@@ -3,12 +3,12 @@ $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('ksu synthetic policy '+[Guid]::NewGuid().ToString('N'))
 $oldLocal=$env:LOCALAPPDATA
 $before=Get-ExecutionPolicy -List | ConvertTo-Json -Compress
-$script:captured=New-Object System.Collections.Generic.List[object]
+$global:KsuSyntheticTaskActions=New-Object System.Collections.Generic.List[object]
 function Assert($condition,$message) { if (-not $condition) { throw $message } }
 function New-ScheduledTaskAction {
     param($Execute,$Argument)
     $action=ScheduledTasks\New-ScheduledTaskAction -Execute $Execute -Argument $Argument
-    $script:captured.Add($action)
+    $global:KsuSyntheticTaskActions.Add($action)
     return $action
 }
 try {
@@ -20,9 +20,9 @@ try {
     New-Item -ItemType Directory -Path $root | Out-Null
     $env:LOCALAPPDATA=$root
     $task=& (Join-Path $PSScriptRoot '../tools/Register-OwnerBackup.ps1') -Origin 'https://127.0.0.1:8030' -PlanOnly
-    Assert ($captured.Count -eq 2) 'Backup and health actions must both be defined before PlanOnly returns'
+    Assert ($global:KsuSyntheticTaskActions.Count -eq 2) 'Backup and health actions must both be defined before PlanOnly returns'
     Assert ($task.Settings.StartWhenAvailable -and $task.Settings.MultipleInstances -eq 2 -and $task.Principal.RunLevel -eq 0) 'Unsafe scheduling settings'
-    foreach ($action in $captured) {
+    foreach ($action in $global:KsuSyntheticTaskActions) {
         Assert ($action.Arguments -match '^-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "([^"]+)" -Directory "([^"]+)"( -Notify)?$') 'Missing process policy or invalid native quoting'
         $file=$Matches[1];$directory=$Matches[2]
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
@@ -42,6 +42,7 @@ if ((Get-ExecutionPolicy -Scope Process) -ne 'Bypass') { throw 'Wrong child proc
     Write-Host 'PASS: both native scheduled actions run with process-only Bypass; Restricted control blocks; persistent policies unchanged'
 } finally {
     Remove-Item function:New-ScheduledTaskAction -ErrorAction SilentlyContinue
+    Remove-Variable -Scope Global -Name KsuSyntheticTaskActions -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA=$oldLocal
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
