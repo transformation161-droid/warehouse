@@ -62,7 +62,7 @@ def grant_runtime(connection,role):
     connection.execute(sql.SQL('GRANT INSERT ON ksu.decision_documents,ksu.decision_versions,ksu.decision_entries,ksu.decision_retirements TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT ON ksu.checklist_versions,ksu.operation_receipts,ksu.media_keys,ksu.offline_packages TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT,UPDATE,DELETE ON ksu.sessions,ksu.attempts TO {}').format(ident))
-    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)','viewer_records()'):
+    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)','viewer_records()','viewer_media_links()','viewer_media(text,boolean)','viewer_read_version()'):
         connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
 
 
@@ -88,6 +88,8 @@ def upgrade_schema(connection):
         from .viewer_schema import postgres
         connection.execute(postgres());version=4
     if version!=SCHEMA_VERSION:raise ValueError('Unsupported schema version')
+    from .viewer_schema import read_functions
+    connection.execute(read_functions())
 
 
 def upgrade(dsn,role,backup_role=None):

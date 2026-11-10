@@ -1,3 +1,4 @@
+> Доработка viewer на базе PR №34: [общий интерфейс, права чтения и проверка Windows pilot/off](docs/VIEWER_SHARED_UI.md).
 > Продолжение релиза — **Draft PR №34**, ветка `release/viewer-branding-backup`: [проверенное состояние и протокол допуска](docs/RELEASE_READINESS.md).
 > Текущий кандидат v4: [брендинг, viewer, миграции](docs/RELEASE_VIEWER.md), [синтетическая Android-приёмка](docs/ANDROID_RELEASE_ACCEPTANCE.md), [расписание backup](docs/SCHEDULED_BACKUP.md). Выпуск в production заблокирован до ручных проверок.
 

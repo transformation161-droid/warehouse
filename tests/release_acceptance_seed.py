@@ -31,7 +31,7 @@ def initialize(root):
     for ident in ('s1','s2'):change('sites',ident,{'name':'ДЕМО · '+ident,'storekeeper':'PRIVATE-SYNTHETIC-PERSON','code':'DEMO-'+ident})
     for site in ('s1','s2'):
         change('visits','demo-visit-'+site,{'siteId':site,'date':'2026-11-09','assignedTo':'inspector' if site=='s1' else 'manager','goal':'PRIVATE-SYNTHETIC-PLAN'})
-        change('findings','demo-finding-'+site,{'siteId':site,'title':'ДЕМО · Открытое нарушение '+site,'description':'PRIVATE-SYNTHETIC-NOTE','owner':'PRIVATE-SYNTHETIC-PERSON'})
+        change('findings','demo-finding-'+site,{'siteId':site,'title':'ДЕМО · Открытое нарушение '+site,'description':'ДЕМО · Операционное описание нарушения','owner':'PRIVATE-SYNTHETIC-PERSON'})
     (root/'synthetic-acceptance.json').write_text(json.dumps({'format':'ksu-release-acceptance-v1','syntheticOnly':True,'schema':4}))
     (root/'accounts.json').write_text(json.dumps(accounts));(root/'accounts.json').chmod(0o600)
     return accounts

@@ -76,7 +76,9 @@ def create_app(path=None, origin=None, secure=None):
         if request.url.path.startswith('/api/') and request.url.path not in ('/api/login','/api/logout') and request.cookies.get('ksu_session'):
             with db.connect() as con:
                 reader=con.execute('select u.id,u.role from sessions s join users u on u.id=s.user_id where s.token_hash=? and s.expires>? and u.active=1',(digest(request.cookies['ksu_session']),time.time())).fetchone()
-            if reader and request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=reader[0]:
+            expected=[request.headers.get('X-KSU-Expected-User')]
+            if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
+            if reader and any(value and value!=reader[0] for value in expected):
                 return JSONResponse({'detail':'Сессия изменилась. Локальные очереди сохранены.'},status_code=403,headers={'Cache-Control':'no-store','X-KSU-Identity-Mismatch':'1'})
             if reader and reader[1]=='viewer':
                 from .viewer import authorize
@@ -120,8 +122,12 @@ def create_app(path=None, origin=None, secure=None):
         actor=dict(row)
         from .viewer import authorize
         authorize(actor,request.url.path,request.method)
+        if actor['role']=='viewer' and not getattr(db,'viewer_read_capable',True):
+            fail('Для просмотра требуется явное обновление функций чтения на новой PostgreSQL-копии',403)
         if release_policy:release_policy.routes(request.url.path)
-        if request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=actor['id']:
+        expected=[request.headers.get('X-KSU-Expected-User')]
+        if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
+        if any(value and value!=actor['id'] for value in expected):
             raise HTTPException(403,'Сессия принадлежит другому пользователю. Очередь сохранена.',headers={'X-KSU-Identity-Mismatch':'1'})
         if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_deployment_id',getattr(app.state,'offline_lab_id',None)):
             fail('Другая установка приложения. Очередь сохранена.',409)
@@ -345,6 +351,9 @@ def create_app(path=None, origin=None, secure=None):
     def media(ident:str,request:Request,thumbnail:bool=False):
         actor=auth(request)
         with db.connect(actor) as con:
+            if actor['role']=='viewer':
+                from .viewer import read_media
+                return Response(read_media(db,con,actor,ident,thumbnail),media_type='image/jpeg')
             row=con.execute('select * from media where id=?',(ident,)).fetchone()
             if not row or not accessible(con,actor,row['site_id']):fail('Фото недоступно',404)
             return Response(bytes(row['thumbnail'] if thumbnail else row['content']),media_type='image/jpeg')
@@ -580,6 +589,19 @@ def create_app(path=None, origin=None, secure=None):
     def reports(extension:str,request:Request):
         actor=auth(request)
         with db.connect(actor) as con:state=db.snapshot(con,actor)
+        if actor['role']=='viewer':
+            site=request.query_params.get('site','all')
+            if site!='all' and site not in {row['id'] for row in state['sites']}:fail('Нет доступа к объекту отчёта',404)
+            if request.query_params.get('kind')=='inventory-detail':
+                ident=request.query_params.get('inventoryId','')
+                inventory=next((row for row in state['inventories'] if row['id']==ident),None)
+                if not inventory:fail('Инвентаризация недоступна',404)
+                report={'headers':['ТМЦ','Артикул','Категория','Единица','Учёт','Факт','Цена'],
+                        'rows':[[row.get(key,'') for key in ('item','sku','category','unit','expected','actual','price')] for row in state['inventoryLines'] if row['inventoryId']==ident],
+                        'period':inventory['date'],'kind':'inventory-detail'}
+                if extension=='json':return report
+                content,mime=export(report,extension)
+                return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="inventory.{extension}"'})
         report=build_report(state,dict(request.query_params))
         if extension=='json':return report
         content,mime=export(report,extension)
