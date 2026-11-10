@@ -57,7 +57,14 @@ def media_links_sql(postgres=False):
         actor='actor_id()'
     else:
         photo="json_extract(r.data,'$.photo')";evidence="json_extract(r.data,'$.evidence')"
-        photos="select 1 from json_each(case when json_type(r.data,'$.results')='array' then json_extract(r.data,'$.results') else '[]' end) x where case when x.type='object' then json_extract(x.value,'$.photo') else null end='/api/media/'||m.id"
+        # SQLite 3.40.1 constructs JSON virtual tables via actions denied by the
+        # read-only authorizer. Walk array indexes using scalar JSON functions;
+        # keep the actor, parent/site ACL and media checks in this same SELECT.
+        photos="""with recursive photo_indexes(i) as (
+          select 0 where json_type(r.data,'$.results')='array' and json_array_length(r.data,'$.results')>0
+          union all select i+1 from photo_indexes where i+1<json_array_length(r.data,'$.results'))
+          select 1 from photo_indexes where json_type(r.data,'$.results['||i||']')='object'
+          and json_extract(r.data,'$.results['||i||'].photo')='/api/media/'||m.id"""
         actor='?'
     parent_site="r.data::jsonb->>'siteId'" if postgres else "json_extract(r.data,'$.siteId')"
     return f"""select m.id from media m where exists(select 1 from user_sites u where u.user_id={actor} and u.site_id=m.site_id)

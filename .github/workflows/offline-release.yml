@@ -67,8 +67,21 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
+      - name: Checkout the exact rejected release for container reproduction
+        uses: actions/checkout@v4
+        with:
+          ref: a150419d0bfd6afa7546b0578094f57eee62672c
+          path: viewer-baseline-source
+          persist-credentials: false
+      - name: Reproduce SQLite 3.40.1 viewer HTTP 503 in the original release image
+        run: |
+          docker build -f viewer-baseline-source/Dockerfile.offline-release --build-arg KSU_BUILD_SHA=a150419d0bfd6afa7546b0578094f57eee62672c -t ksu-viewer:rejected-a150419 viewer-baseline-source
+          python -m tests.viewer_release_container --image ksu-viewer:rejected-a150419 --expect-broken --output /tmp/viewer-runtime-reproduction.json
       - run: docker build -f Dockerfile.offline-release --build-arg KSU_BUILD_SHA="$GITHUB_SHA" -t ksu-offline:rc .
       - run: python -m tests.release_container --image ksu-offline:rc
+      - run: python -m playwright install --with-deps chromium
+      - name: Viewer UI and ACLs on the candidate image's actual SQLite and authorizer
+        run: python -m tests.viewer_release_container --image ksu-offline:rc --browser --output /tmp/viewer-runtime-candidate.json
       - run: docker build -f Dockerfile.offline-acceptance --build-arg RELEASE_IMAGE=ksu-offline:rc -t ksu-offline-acceptance:rc .
       - run: python -m tests.acceptance_image --image ksu-offline-acceptance:rc
       - run: python -m tests.release_scheduled_backup --image ksu-offline:rc
@@ -77,6 +90,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ksu-synthetic"
           chmod 777 "$RUNNER_TEMP/ksu-synthetic"
           docker run --rm --network none --user 10001:10001 --cpus 0.5 --memory 1g --memory-swap 1g --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m -v "$PWD:/test-source:ro" -v "$RUNNER_TEMP/ksu-synthetic:/synthetic:rw" -e TMPDIR=/synthetic -e PYTHONPATH=/test-source -e KSU_SCHEMA_MODE=explicit-copy-migration --entrypoint python ksu-offline:rc -m tests.release_large_backup
+      - name: Actual release SQLite compatibility evidence (aggregates only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer-release-sqlite-runtime
+          path: /tmp/viewer-runtime-*.json
+          retention-days: 7
   windows:
     runs-on: windows-latest
     steps:

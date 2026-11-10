@@ -1,3 +1,5 @@
+> Исправление HTTP 503 на SQLite 3.40.1 в release image: [причина, контейнерная регрессия и повторная приёмка на новом 8020](VIEWER_SQLITE_COMPATIBILITY.md).
+
 # Viewer в общем интерфейсе — доработка на базе PR №34
 
 База: `release/viewer-branding-backup`, `5a9b3b615a56e3be0e5a523ab52066bccbaf2b07`.

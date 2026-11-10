@@ -130,6 +130,28 @@ class Viewer(unittest.TestCase):
         self.assertEqual(result,{'siteId':'s1','results':[{'questionId':'q1','status':'ok','title':'ДЕМО'}]})
         self.assertEqual(project('findings',{'title':{'name':'PRIVATE'},'owner':'PRIVATE','repeat':{'secret':'PRIVATE'}}),{})
 
+    def test_sqlite_attachment_array_edges_keep_parent_and_media_acl(self):
+        if self.app.state.db.backend!='sqlite':self.skipTest('SQLite JSON compatibility contract')
+        from server.viewer import media_links_sql
+        url='/api/media/demo-allowed'
+        cases=[([],set()),([None,1,'text',[],{'photo':url}],{'demo-allowed'}),
+               ([None]*199+[{'photo':url}],{'demo-allowed'}),
+               ({'photo':url},set()),([{'photo':{'secret':url}}],set()),
+               ([{'photo':url+'-suffix'}],set()),([{'photo':'/api/media/demo-foreign'}],set())]
+        actor=self.app.state.db.user('synthetic-viewer')
+        # Only read CTEs: the real viewer connection/authorizer remains active.
+        query="""with records(collection,site_id,data) as (values('inspections','s1',?)),
+          user_sites(user_id,site_id) as (values('viewer','s1')),
+          media(id,site_id) as (values('demo-allowed','s1'),('demo-orphan','s1'),('demo-foreign','s2')) """+media_links_sql()
+        with self.app.state.db.connect(actor) as con:
+            for results,expected in cases:
+                with self.subTest(results_type=type(results).__name__,length=len(results)):
+                    payload=json.dumps({'siteId':'s1','results':results})
+                    self.assertEqual({row['id'] for row in con.execute(query,(payload,actor['id']))},expected)
+            payload=json.dumps({'siteId':'s2','results':[{'photo':url}]})
+            self.assertEqual(con.execute(query,(payload,actor['id'])).fetchall(),[])
+            self.assertEqual(con.execute(query,(json.dumps({'siteId':'s1','results':[{'photo':url}]}),'unassigned')).fetchall(),[])
+
     def test_logout_and_cross_account_sessions_preserve_existing_roles(self):
         original=dict(self.viewer.cookies);self.assertEqual(self.viewer.post('/api/logout').status_code,200)
         self.assertEqual(self.viewer.get('/api/me').status_code,401)
