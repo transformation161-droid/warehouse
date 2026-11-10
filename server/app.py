@@ -32,6 +32,8 @@ DUMMY_PASSWORD=password_hash(secrets.token_urlsafe(24))
 
 def create_app(path=None, origin=None, secure=None):
     release_policy=None
+    if os.getenv('KSU_DEPLOYMENT_PROFILE')=='production' and os.getenv('KSU_OFFLINE_MODE') is None:
+        raise ValueError('Explicit production release policy required')
     if os.getenv('KSU_OFFLINE_MODE') is not None:
         from .offline_release import Policy
         release_policy=Policy.environment()
@@ -610,7 +612,8 @@ def create_app(path=None, origin=None, secure=None):
         report=build_report(state,dict(request.query_params))
         if extension=='json':return report
         content,mime=export(report,extension)
-        return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="ksu-demo-{report["kind"]}.{extension}"'})
+        prefix='instrakt' if release_policy else 'ksu-demo'
+        return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="{prefix}-{report["kind"]}.{extension}"'})
 
     # Only explicit public assets; never serve database, backups, SQL, tests or source directories.
     from .writeoff_analytics import install as install_writeoff_analytics
@@ -620,7 +623,7 @@ def create_app(path=None, origin=None, secure=None):
             if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release

@@ -13,7 +13,12 @@ try {
     $output=Join-Path $root 'new-output'
     $tool=Join-Path $PSScriptRoot '../tools/Invoke-ManagedPostgres.ps1'
     Refused { & $tool -Operation backup -EnvFile $envFile -OutputDirectory $root } 'New private output'
+    Refused { & $tool -Operation init-production -EnvFile $envFile -OutputDirectory $output } 'Explicit private input'
     Refused { & $tool -Operation migrate -EnvFile $envFile -OutputDirectory $output } 'Explicit private input'
+    foreach ($operation in @('template','init-schema')) {
+        # These operations require no Source: they must reach the Git-path guard.
+        Refused { & $tool -Operation $operation -EnvFile (Join-Path $PSScriptRoot '../requirements.txt') -OutputDirectory $output } 'outside Git'
+    }
     Set-Content -LiteralPath ($source+'-wal') -Value 'SYNTHETIC WAL'
     Refused { & $tool -Operation migrate -EnvFile $envFile -OutputDirectory $output -Source $source } 'Closed independent'
     Refused { & $tool -Operation preflight -EnvFile (Join-Path $PSScriptRoot '../requirements.txt') -OutputDirectory $output } 'outside Git'

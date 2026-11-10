@@ -31,7 +31,7 @@ def configure():
     if work.is_symlink():raise ValueError('Private local scratch required')
     work.mkdir(mode=0o700,exist_ok=True)
     from server.storage import check_storage
-    os.environ.update(KSU_DATABASE_URL=dsn,KSU_WORK_DIR=str(work),KSU_BACKUP_VOLUME_ROOT=str(work),
+    os.environ.update(KSU_DEPLOYMENT_PROFILE='production',KSU_DATABASE_URL=dsn,KSU_WORK_DIR=str(work),KSU_BACKUP_VOLUME_ROOT=str(work),
         KSU_SCHEMA_MODE='verified',KSU_REQUIRE_INITIALIZED='1',KSU_SECURE_COOKIES='1',
         KSU_TRUST_LOCAL_PROXY='0',KSU_RELEASE_BUILD_SHA=build)
     os.environ.pop('KSU_DATABASE_URL_FILE',None)

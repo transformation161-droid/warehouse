@@ -19,7 +19,7 @@ def validate_report(report):
         if not isinstance(value,dict) or set(value)!={'count','sha256'}:raise ValueError('Invalid table report')
         if type(value['count']) is not int or value['count']<0:raise ValueError('Invalid record count')
         if not isinstance(value['sha256'],str) or not re.fullmatch('[a-f0-9]{64}',value['sha256']):raise ValueError('Invalid table checksum')
-    if tables['users']['count']<2:raise ValueError('Demo accounts missing')
+    if tables['users']['count']<2:raise ValueError('Initial accounts missing')
     return tables
 
 

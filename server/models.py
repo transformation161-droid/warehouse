@@ -19,6 +19,9 @@ class Site(Model):
 
 
 class Question(Model):
+    archived: bool = False
+    position: int | None = Field(default=None, ge=0, le=100000, strict=True)
+    templateId: Literal['global'] = 'global'
     section: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=500)
 

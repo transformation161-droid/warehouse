@@ -15,6 +15,8 @@ run.add_argument('--host',choices=['127.0.0.1','0.0.0.0'],default='127.0.0.1')
 backup=sub.add_parser('backup');backup.add_argument('destination');backup.add_argument('--db',default=str(ROOT/'var/ksu.sqlite3'))
 restore=sub.add_parser('restore');restore.add_argument('source');restore.add_argument('destination',help='Новый путь БД, существующий файл не заменяется')
 args=parser.parse_args()
+if args.command=='init-demo' and (os.getenv('KSU_DEPLOYMENT_PROFILE')=='production' or os.getenv('KSU_SCHEMA_MODE')=='verified'):
+    parser.error('Demo initialization is forbidden in production; use server.managed_pg init-production')
 if args.command!='run' and os.getenv('KSU_DATABASE_URL'):
     parser.error('These init/backup/restore commands are SQLite-only; use python -m server.pg_admin in PostgreSQL mode')
 if args.command=='init-demo':
