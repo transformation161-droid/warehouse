@@ -1,8 +1,19 @@
 # Проверяемое расписание backup без дополнительного платного сервиса
 
-Решение для текущей рабочей архитектуры SQLite: **компьютер владельца Windows + существующий Docker Desktop**,
+Дополнительная внешняя копия для SQLite: **компьютер владельца Windows + существующий Docker Desktop**,
 Task Scheduler, персональная manager-учётная запись, проверенный HTTPS. Ничего не устанавливается и не
 регистрируется на Amvera этой веткой. Сначала репетиция только на синтетическом стенде/новой копии.
+
+Для рабочего выпуска основной порядок и ограничения описаны в [PRODUCTION_RELEASE.md](PRODUCTION_RELEASE.md#backup-при-выключенном-windows-простой-вариант-и-его-предел):
+ежедневные проверяемые копии на существующем томе Amvera, без нового платного ресурса;
+Windows дополняет их, но не гарантирует ежедневную независимую копию при выключенном ПК.
+
+Обе Scheduled Tasks теперь используют полный путь Windows PowerShell и
+`-NoProfile -NonInteractive -ExecutionPolicy Bypass -File`. Меняется только политика процесса;
+глобальная/пользовательская политика не изменяется, GPO сохраняет приоритет. Уже созданные
+задачи сами не обновятся: после разрешения сохранить и отключить старую пару по точным именам,
+проверить PlanOnly новой версии, зарегистрировать новую пару и проверить backup/health.
+Профили/старые копии не удалять. Корпоративный запрет GPO решается с IT, не обходится.
 
 ## Сервер и проверка копии
 
@@ -30,7 +41,7 @@ Backup/verification-файлы публикуются без перезапис�
 внутри другого контейнера. Не отключать TLS verification. `-CaCertificate` — **публичный** rootCA.pem, не ключ.
 
 ```powershell
-.\tools\Register-OwnerBackup.ps1 -Origin 'https://192.168.1.20:8017' -Image 'ksu-offline:rc' -At '21:00' -CaCertificate 'D:\KSU-private\tls\rootCA.pem' -PlanOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Register-OwnerBackup.ps1 -Origin 'https://192.168.1.20:8017' -Image 'ksu-offline:rc' -At '21:00' -CaCertificate 'D:\KSU-private\tls\rootCA.pem' -PlanOnly
 ```
 
 PlanOnly строит объект ежедневной задачи без файлов/учётных данных/Docker/регистрации. CI проверяет
@@ -49,8 +60,8 @@ pull запрещён. Manager-пароль сохраняется Export-Clixml
 Проверка вручную, где `<профиль>` — новый путь, напечатанный регистрацией:
 
 ```powershell
-& '<профиль>\Invoke-OwnerBackup.ps1' -Directory '<профиль>'
-& '<профиль>\Test-OwnerBackup.ps1' -Directory '<профиль>'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '<профиль>\Invoke-OwnerBackup.ps1' -Directory '<профиль>'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '<профиль>\Test-OwnerBackup.ps1' -Directory '<профиль>'
 ```
 
 В Task Scheduler проверить Last Run Result0, History и следующую дату. В owner-status.json ожидается

@@ -9,8 +9,13 @@ $id=[Guid]::NewGuid().ToString('N');$directory=Join-Path $env:LOCALAPPDATA "KSU-
 $taskName='KSU-Verified-Backup-'+$id
 $principal=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) -LogonType Interactive -RunLevel Limited
 $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 15) -ExecutionTimeLimit (New-TimeSpan -Minutes 20) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -File `"$(Join-Path $directory 'Invoke-OwnerBackup.ps1')`" -Directory `"$directory`""
+$powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+# Process-only policy. Never change CurrentUser/LocalMachine or override Group Policy.
+$commonArguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File'
+$action=New-ScheduledTaskAction -Execute $powershell -Argument "$commonArguments `"$(Join-Path $directory 'Invoke-OwnerBackup.ps1')`" -Directory `"$directory`""
 $task=New-ScheduledTask -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $time) -Principal $principal -Settings $settings
+$healthAction=New-ScheduledTaskAction -Execute $powershell -Argument "$commonArguments `"$(Join-Path $directory 'Test-OwnerBackup.ps1')`" -Directory `"$directory`" -Notify"
+$healthTask=New-ScheduledTask -Action $healthAction -Trigger (New-ScheduledTaskTrigger -Daily -At $time.AddMinutes(45)) -Principal $principal -Settings $settings
 if ($PlanOnly) { return $task } # Pure task-definition test: no credentials/files/volumes/tasks created.
 function Invoke-Docker { & docker @args;if ($LASTEXITCODE -ne 0) { throw 'Backup setup failed; existing resources are unchanged.' } }
 $imageId=Invoke-Docker image inspect --format '{{.Id}}' $Image
@@ -32,8 +37,6 @@ $config=@{format='ksu-owner-backup-v1';origin=$Origin;image=$imageId;volume=$vol
 if ($CaCertificate) { Copy-Item -LiteralPath $CaCertificate -Destination (Join-Path $directory 'ca.pem');$config.ca=Join-Path $directory 'ca.pem' }
 $config | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $directory 'settings.json')
 Register-ScheduledTask -TaskName $taskName -InputObject $task | Out-Null
-$healthAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -File `"$(Join-Path $directory 'Test-OwnerBackup.ps1')`" -Directory `"$directory`" -Notify"
-$healthTask=New-ScheduledTask -Action $healthAction -Trigger (New-ScheduledTaskTrigger -Daily -At $time.AddMinutes(45)) -Principal $principal -Settings $settings
 Register-ScheduledTask -TaskName ($taskName+'-Health') -InputObject $healthTask | Out-Null
 Write-Host "Registered personal backup and health tasks: $taskName . Profile: $directory"
 Write-Host 'Run once and verify independently before accepting RPO. Windows, Docker and this user session must remain available. No old backups are deleted.'

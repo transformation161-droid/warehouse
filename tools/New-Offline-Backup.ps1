@@ -3,13 +3,15 @@
 param(
     [Parameter(Mandatory=$true)][string]$FrozenDirectory,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
+    [string]$DatabaseRelativePath='ksu.sqlite3',
     [switch]$ConfirmedStoppedCopy,
     [string]$Image='ksu-offline:rc'
 )
 $ErrorActionPreference='Stop'
 if (-not $ConfirmedStoppedCopy) { throw 'Confirm that ALL writers were stopped before the complete /data directory was downloaded. Never use a live main-file copy.' }
 $source=(Get-Item -LiteralPath $FrozenDirectory).FullName
-if (-not (Test-Path -LiteralPath (Join-Path $source 'ksu.sqlite3') -PathType Leaf)) { throw 'A full frozen directory with ksu.sqlite3 is required.' }
+if ($DatabaseRelativePath -notmatch '^(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+\.sqlite3$') { throw 'Safe relative SQLite path required.' }
+if (-not (Test-Path -LiteralPath (Join-Path $source $DatabaseRelativePath) -PathType Leaf)) { throw 'The configured SQLite path must exist in the full frozen directory.' }
 $target=[IO.Path]::GetFullPath($OutputDirectory)
 if ((Test-Path -LiteralPath $target) -or $target.StartsWith($source.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Use a NEW private output directory outside the frozen source.' }
 $ancestor=Split-Path -Parent $target
@@ -30,7 +32,7 @@ $mount=@('--mount',"type=volume,src=$volume,dst=/output")
 Invoke-Docker run --rm --pull never --network none --user 0:0 @mount --entrypoint python $Image -c "import os; from pathlib import Path; assert not any(Path('/output').iterdir()), 'New empty volume required'; os.chown('/output',10001,10001); os.chmod('/output',0o700)"
 # All SQLite operations occur on the volume's Linux filesystem, never on the NTFS input/output.
 Invoke-Docker run --pull never --name $name --network none --cpus 0.5 --memory 1g --memory-swap 1g --read-only --tmpfs '/tmp:rw,nosuid,nodev,size=32m' @mount `
-    --mount "type=bind,src=$source,dst=/input,readonly" --entrypoint python $Image -m server.release_backup --frozen-directory /input --destination /output/ksu-backup.sqlite3 --confirmed-stopped-copy
+    --mount "type=bind,src=$source,dst=/input,readonly" --entrypoint python $Image -m server.release_backup --frozen-directory /input --database-relative $DatabaseRelativePath --destination /output/ksu-backup.sqlite3 --confirmed-stopped-copy
 $backup=Join-Path $target 'ksu-backup.sqlite3';$report=$backup+'.verification.json'
 if ((Test-Path -LiteralPath $backup) -or (Test-Path -LiteralPath $report)) { throw 'Output appeared during backup; refusing to overwrite.' }
 Invoke-Docker cp "${name}:/output/ksu-backup.sqlite3" $backup

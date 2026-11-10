@@ -57,6 +57,7 @@ def create_app(path=None, origin=None, secure=None):
     app.state.db=db;app.state.import_jobs=jobs
     write_gate=asyncio.Lock()
     backup_gate=threading.BoundedSemaphore(1)
+    app.state.backup_gate=backup_gate
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[urlparse(public_origin).hostname])
 
     @app.exception_handler(StorageFull)
@@ -144,7 +145,10 @@ def create_app(path=None, origin=None, secure=None):
     def health():
         with db.connect() as con:con.execute('select 1').fetchone()
         if release_policy:
-            return {'status':'ok','data':'application','build':os.getenv('KSU_RELEASE_BUILD_SHA','unknown'),'offline':release_policy.mode}
+            result={'status':'ok','data':'application','build':os.getenv('KSU_RELEASE_BUILD_SHA','unknown'),'offline':release_policy.mode}
+            local=getattr(app.state,'local_backups',None)
+            if local:result['localBackup']=local.summary()
+            return result
         return {'status':'ok','data':'demonstration'}
 
     @app.post('/api/login')

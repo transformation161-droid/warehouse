@@ -1,0 +1,80 @@
+name: Production candidate operations
+on:
+  pull_request:
+    branches: [fix/viewer-shared-interface]
+permissions:
+  contents: read
+concurrency:
+  group: production-candidate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  preservation-and-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Operational failures, copy migration, API rights and accepted source preservation
+        run: >-
+          python -m unittest -v tests.test_production_candidate tests.test_storage
+          tests.test_backup_job tests.test_offline_release tests.test_offline_upgrade
+          tests.test_release_v3_upgrade tests.test_viewer tests.test_api tests.test_visits
+      - name: Deployed legacy revision to v4, private copies only
+        run: python -m tests.release_upgrade
+  delivery-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Export committed source only, stamp exact source SHA
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -m deploy.release_candidate.bundle --ref "$SOURCE_SHA" --output "$RUNNER_TEMP/release-delivery"
+          python -m deploy.release_candidate.bundle --verify "$RUNNER_TEMP/release-delivery"
+      - name: Build exactly as Amvera, without build arguments or data
+        run: docker build -f "$RUNNER_TEMP/release-delivery/Dockerfile.offline-release" -t ksu-production:rc "$RUNNER_TEMP/release-delivery"
+      - name: Actual image SQLite, authorizer and backup lifecycle, no UI replay
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python -m tests.production_release_container --image ksu-production:rc --sha "$SOURCE_SHA" --output "$RUNNER_TEMP/production-runtime.json"
+      - name: Downloadable source-only delivery bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-source-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/release-delivery/
+          include-hidden-files: true
+          retention-days: 14
+      - name: Aggregate synthetic operational evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-runtime
+          path: ${{ runner.temp }}/production-runtime.json
+          retention-days: 14
+  windows-execution-policy:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Native scheduled task actions, both process scopes, no policy changes
+        shell: powershell
+        run: ./tests/windows_backup_policy.Tests.ps1

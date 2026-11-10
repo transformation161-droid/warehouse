@@ -1,0 +1,186 @@
+{
+  "checked_on": "2026-11-10",
+  "accepted_sha": "b7b0c626b31c8152890ffa040e98809d8f54db74",
+  "pull_requests": [
+    {
+      "number": 5,
+      "title": "infra: подготовка бесплатного Oracle HTTPS-пилота (задача #4)",
+      "head": "feat/issue-4-free-https-pilot",
+      "head_sha": "f2d3943786d04f8a7dc361bfe58c568a217e13c0",
+      "base": "main",
+      "base_sha": "0cf8002e2ec5d139b312ec557db0a5917dd03272",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/5"
+    },
+    {
+      "number": 6,
+      "title": "infra: Amvera HTTPS-пилот КСУ (задача #4)",
+      "head": "feat/issue-4-amvera-pilot",
+      "head_sha": "3e3771ec0dd93eba5cc16d83cb477002273315a4",
+      "base": "main",
+      "base_sha": "0cf8002e2ec5d139b312ec557db0a5917dd03272",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/6"
+    },
+    {
+      "number": 8,
+      "title": "feat: переносная проверка SQLite на Windows без установки Python (#4)",
+      "head": "feat/issue-4-windows-restore",
+      "head_sha": "9ca5e29834cd5d6bc12313efa8e7a7c16b091ff4",
+      "base": "feat/issue-4-amvera-pilot",
+      "base_sha": "3e3771ec0dd93eba5cc16d83cb477002273315a4",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/8"
+    },
+    {
+      "number": 12,
+      "title": "feat: самостоятельное планирование выездов инспектором (#11)",
+      "head": "feat/issue-11-inspector-visits",
+      "head_sha": "061ee2548c2a662dc1b444d5b9783b464c49de35",
+      "base": "feat/issue-4-amvera-pilot",
+      "base_sha": "3e3771ec0dd93eba5cc16d83cb477002273315a4",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/12"
+    },
+    {
+      "number": 13,
+      "title": "feat: XLSX до 30 МБ — потоковый реестр списаний и решений (#10)",
+      "head": "feat/issue-10-large-xlsx",
+      "head_sha": "f7eecc47c118d27563f219b8afc197f81abab6a2",
+      "base": "feat/issue-4-amvera-pilot",
+      "base_sha": "3e3771ec0dd93eba5cc16d83cb477002273315a4",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/13"
+    },
+    {
+      "number": 16,
+      "title": "Интеграция: самостоятельные выезды и импорт списаний/решений",
+      "head": "integration/visits-inventory",
+      "head_sha": "bca38a5a1c99d683d236d5178846ab5d00f98e03",
+      "base": "feat/issue-4-amvera-pilot",
+      "base_sha": "3e3771ec0dd93eba5cc16d83cb477002273315a4",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/16"
+    },
+    {
+      "number": 18,
+      "title": "feat: календарь выездов — месяц, неделя, день (#17)",
+      "head": "feat/issue-17-visit-calendar",
+      "head_sha": "c16e2cd8ee82f1cffa4024381d58d0a242b1a380",
+      "base": "integration/visits-inventory",
+      "base_sha": "bca38a5a1c99d683d236d5178846ab5d00f98e03",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/18"
+    },
+    {
+      "number": 19,
+      "title": "feat: PostgreSQL, миграция и независимый backup/restore (#9, #14)",
+      "head": "feat/issue-9-postgresql",
+      "head_sha": "97148799dd4ca61d6d3c9e968d7170e00dfa6617",
+      "base": "feat/issue-17-visit-calendar",
+      "base_sha": "c16e2cd8ee82f1cffa4024381d58d0a242b1a380",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/19"
+    },
+    {
+      "number": 22,
+      "title": "PostgreSQL: нагрузочная приёмка реестра 18/30 МБ и независимого restore (#20)",
+      "head": "test/issue-20-postgres-large-registry",
+      "head_sha": "3127031b9d048e26692be8c362c469d1fe01da33",
+      "base": "feat/issue-9-postgresql",
+      "base_sha": "97148799dd4ca61d6d3c9e968d7170e00dfa6617",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/22"
+    },
+    {
+      "number": 23,
+      "title": "Версии исправленных XLSX: явное замещение без двойного учёта (#21)",
+      "head": "feat/issue-21-decision-versions",
+      "head_sha": "4311f5e93cfdadc6b7c4d97d61defe4c7a5ee2e9",
+      "base": "test/issue-20-postgres-large-registry",
+      "base_sha": "3127031b9d048e26692be8c362c469d1fe01da33",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/23"
+    },
+    {
+      "number": 24,
+      "title": "feat: предварительная аналитика списаний и решений (#15)",
+      "head": "feat/issue-15-writeoff-analytics",
+      "head_sha": "17521cd3386924e1483edd0cf68913998f720a50",
+      "base": "feat/issue-21-decision-versions",
+      "base_sha": "4311f5e93cfdadc6b7c4d97d61defe4c7a5ee2e9",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/24"
+    },
+    {
+      "number": 26,
+      "title": "perf: предрелизная оптимизация аналитики и интерфейса (#25)",
+      "head": "feat/issue-25-analytics-polish",
+      "head_sha": "d002969e0edeef8373fcc0f2249a24d0689c9a3a",
+      "base": "feat/issue-15-writeoff-analytics",
+      "base_sha": "17521cd3386924e1483edd0cf68913998f720a50",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/26"
+    },
+    {
+      "number": 27,
+      "title": "feat: Windows-запуск КСУ с PostgreSQL 17 из проверенной SQLite-копии",
+      "head": "feat/windows-postgres-launcher",
+      "head_sha": "9ab36f1702a972931afe93a026c8f865739c1b37",
+      "base": "feat/issue-25-analytics-polish",
+      "base_sha": "d002969e0edeef8373fcc0f2249a24d0689c9a3a",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/27"
+    },
+    {
+      "number": 28,
+      "title": "feat: изолированный офлайн-прототип инспектора — этап 0",
+      "head": "feat/offline-stage0",
+      "head_sha": "95952d36dc2098e0f033c8a7abe08551387ae671",
+      "base": "feat/windows-postgres-launcher",
+      "base_sha": "9ab36f1702a972931afe93a026c8f865739c1b37",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/28"
+    },
+    {
+      "number": 29,
+      "title": "feat: серверная основа офлайн-синхронизации — этап 1",
+      "head": "feat/offline-stage1-server",
+      "head_sha": "817ae05ef46cc34bd356cd9613f247e8e4005012",
+      "base": "feat/offline-stage0",
+      "base_sha": "95952d36dc2098e0f033c8a7abe08551387ae671",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/29"
+    },
+    {
+      "number": 30,
+      "title": "feat: один полный офлайн-выезд с устойчивой очередью и receipt — этап 2",
+      "head": "feat/offline-stage2-visit-sync",
+      "head_sha": "81c64364cd563a1b9dae08b5d7a754e22b948555",
+      "base": "feat/offline-stage1-server",
+      "base_sha": "817ae05ef46cc34bd356cd9613f247e8e4005012",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/30"
+    },
+    {
+      "number": 32,
+      "title": "Брендинг: ИНСТРАКТ | Складской учет и фирменный логотип",
+      "head": "feat/instrakt-branding",
+      "head_sha": "df35747a4a8c3da27718343574fe9bbeb12ddb12",
+      "base": "feat/offline-stage2-visit-sync",
+      "base_sha": "81c64364cd563a1b9dae08b5d7a754e22b948555",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/32"
+    },
+    {
+      "number": 33,
+      "title": "release: подготовка первого офлайн-MVP с безопасной миграцией и staging",
+      "head": "release/offline-mvp-candidate",
+      "head_sha": "c787614f6c30eb1701a86b909b80a4c1bd0a143a",
+      "base": "feat/offline-stage2-visit-sync",
+      "base_sha": "81c64364cd563a1b9dae08b5d7a754e22b948555",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/33"
+    },
+    {
+      "number": 34,
+      "title": "release: фирменная оболочка, viewer и проверяемый backup по расписанию (#31)",
+      "head": "release/viewer-branding-backup",
+      "head_sha": "5a9b3b615a56e3be0e5a523ab52066bccbaf2b07",
+      "base": "release/offline-mvp-candidate",
+      "base_sha": "c787614f6c30eb1701a86b909b80a4c1bd0a143a",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/34"
+    },
+    {
+      "number": 35,
+      "title": "fix: общий интерфейс viewer с правами чтения и Windows pilot/off",
+      "head": "fix/viewer-shared-interface",
+      "head_sha": "b7b0c626b31c8152890ffa040e98809d8f54db74",
+      "base": "release/viewer-branding-backup",
+      "base_sha": "5a9b3b615a56e3be0e5a523ab52066bccbaf2b07",
+      "url": "https://github.com/transformation161-droid/warehouse/pull/35"
+    }
+  ]
+}
