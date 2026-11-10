@@ -19,9 +19,11 @@ def canonical(value):
 def epoch():return time.time()
 
 
-def current_checklist(con):
+def current_checklist(con,template_id='global'):
     questions=[{'id':r['id'],'version':r['version'],**json.loads(r['data'])}
                for r in con.execute("select id,version,data from records where collection='questions' order by id")]
+    from .checklists import active
+    questions=active(questions,template_id)
     if not questions or len(questions)>200:fail('Чек-лист должен содержать от 1 до 200 пунктов')
     data=canonical(questions);ident=digest(data)
     con.execute('insert into checklist_versions values(?,?,?) on conflict(id) do nothing',(ident,data,now()))

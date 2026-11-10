@@ -277,6 +277,8 @@ class Database:
             state[collection].sort(key=lambda item: (0,int(item['id'][1:]))
                                    if item['id'].startswith(prefix) and item['id'][1:].isdigit()
                                    else (1,item['createdAt']))
+        from .checklists import ordered
+        state['questions']=ordered(state['questions'])
         state['meta'] = {'mode':'work' if os.getenv('KSU_OFFLINE_MODE') is not None else 'demo', 'name':'ИНСТРАКТ | Складской учет'}
         state['assignees'] = [
             {'id':u['id'],'name':u['name'], 'siteIds':
@@ -292,6 +294,8 @@ class Database:
 
 def seed_demo(db, manager_password, inspector_password):
     """Explicit CLI only; never seed on server startup or overwrite an existing user."""
+    if os.getenv('KSU_DEPLOYMENT_PROFILE')=='production' or os.getenv('KSU_SCHEMA_MODE')=='verified':
+        raise ValueError('Demo seeding is forbidden in production')
     actor = {'id':'manager', 'role':'manager'}
     seed = json.loads((ROOT/'server/seed.json').read_text())
     with db.connect(actor) as con:

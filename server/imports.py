@@ -2,6 +2,7 @@ import base64
 import csv
 import io
 import json
+import os
 import zipfile
 from datetime import datetime
 from uuid import uuid4
@@ -57,7 +58,7 @@ def parse_import(db, actor, payload):
             line=InventoryLine.model_validate(record).model_dump()
             from datetime import date
             day=date.fromisoformat(obj['date']).isoformat()
-            valid.append({'siteId':site,'date':day,'title':obj.get('title') or 'ДЕМО · Импорт инвентаризации','line':line})
+            valid.append({'siteId':site,'date':day,'title':obj.get('title') or ('Импорт инвентаризации' if os.getenv('KSU_OFFLINE_MODE') is not None else 'ДЕМО · Импорт инвентаризации'),'line':line})
             preview.append({'row':index,'object':obj['object'],'date':day,'item':line['item'],'expected':line['expected'],'actual':line['actual'],'price':line['price']})
         except Exception as exc:
             errors.append({'row':index,'message':str(exc)[:180]})

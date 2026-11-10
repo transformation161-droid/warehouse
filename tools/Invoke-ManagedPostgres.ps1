@@ -1,7 +1,7 @@
 # Owner-local operations only; private env/CA/source files must never be in a Git checkout.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('bootstrap','migrate','verify','preflight','backup','restore')][string]$Operation,
+    [Parameter(Mandatory=$true)][ValidateSet('bootstrap','template','init-schema','init-production','migrate','verify','preflight','backup','restore')][string]$Operation,
     [Parameter(Mandatory=$true)][string]$EnvFile,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [string]$Source='',
@@ -16,7 +16,7 @@ $target=[IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $target) { throw 'New private output directory required; no overwrite.' }
 $inputPath=''
 if ($Source) { $item=Get-Item -LiteralPath $Source;if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Regular private input file required.' };$inputPath=$item.FullName }
-if ($Operation -in @('bootstrap','migrate','verify','restore') -and -not $inputPath) { throw 'Explicit private input file required.' }
+if ($Operation -in @('bootstrap','init-production','migrate','verify','restore') -and -not $inputPath) { throw 'Explicit private input file required.' }
 if ($Operation -eq 'migrate') {
     foreach ($suffix in @('-wal','-shm','-journal')) { if (Test-Path -LiteralPath ($inputPath+$suffix)) { throw 'Closed independent SQLite backup required.' } }
 }
@@ -46,6 +46,9 @@ Invoke-Docker run --rm --pull never --network none --user 0:0 @work --entrypoint
 $operationArgs=@($Operation)
 switch ($Operation) {
     bootstrap { }
+    template { $operationArgs+=@('--output','/work/result/pilot-template.json') }
+    init-schema { }
+    init-production { $operationArgs+=@('--source','/input/source','--output','/work/result/production') }
     migrate { $operationArgs+=@('--source','/input/source','--output','/work/result/migration.json') }
     verify { $operationArgs+=@('--report','/input/source') }
     preflight { $operationArgs+=@('--role',$Role) }

@@ -1,7 +1,7 @@
-name: Managed PostgreSQL production candidate
+name: Clean PostgreSQL pilot and checklist
 on:
   pull_request:
-    branches: [release/production-candidate]
+    branches: [release/production-candidate, release/amvera-postgres-candidate]
 permissions:
   contents: read
 concurrency:
@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
       - name: Accepted source preservation, TLS gates, migrations and SQLite compatibility
-        run: python -m unittest -v tests.test_managed_pg tests.test_production_candidate tests.test_pg_finalize tests.test_offline_release tests.test_release_v3_upgrade tests.test_viewer tests.test_backup_job tests.test_api
+        run: python -m unittest -v tests.test_production_init tests.test_managed_pg tests.test_production_candidate tests.test_pg_finalize tests.test_offline_release tests.test_release_v3_upgrade tests.test_viewer tests.test_backup_job tests.test_api
       - run: python -m tests.release_upgrade
   real-postgres-and-image:
     runs-on: ubuntu-latest
@@ -54,10 +54,11 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as out:
               for key,value in values.items():out.write(key+'='+value+'\n')
           PY
-      - name: Independent TLS clusters, exact release image, migration/restore and all PostgreSQL API contracts
+      - run: python -m playwright install --with-deps chromium
+      - name: Clean setup, checklist UI, immutable offline history and independent restore
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python -u -m tests.managed_pg_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --contracts --output "$RUNNER_TEMP/managed-runtime.json"
+        run: python -u -m tests.clean_pg_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --browser --upstream --output "$RUNNER_TEMP/managed-runtime.json"
       - uses: actions/upload-artifact@v4
         with:
           name: managed-source-${{ github.event.pull_request.head.sha }}

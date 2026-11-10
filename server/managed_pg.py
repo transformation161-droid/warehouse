@@ -116,7 +116,8 @@ def migrate(source,dsn,output):
 
 def verify_report(dsn,path):
     tls(dsn);report=json.loads(Path(path).read_text())
-    if not report.get('source_unchanged') or not report.get('sessions_revoked') or set(report.get('tables',{}))!=set(TABLES):raise ValueError('Complete private migration report required')
+    fresh=report.get('format')=='ksu-production-initialization-v1' and report.get('initialized') is True
+    if not (fresh or report.get('source_unchanged')) or not report.get('sessions_revoked') or set(report.get('tables',{}))!=set(TABLES):raise ValueError('Complete private setup/migration report required')
     with psycopg.connect(dsn,connect_timeout=10) as con:
         con.execute('set transaction isolation level repeatable read read only')
         validate_schema(con)
@@ -127,14 +128,26 @@ def verify_report(dsn,path):
 
 def main():
     import argparse,sys
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('operation',choices=('bootstrap','migrate','verify','preflight','backup','restore'))
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('operation',choices=('bootstrap','init-schema','init-production','template','migrate','verify','preflight','backup','restore'))
     parser.add_argument('--source');parser.add_argument('--output');parser.add_argument('--report');parser.add_argument('--role',choices=('runtime','admin','backup'),default='runtime')
     args=parser.parse_args()
     try:
-        key={'bootstrap':'KSU_PG_BOOTSTRAP_DSN','backup':'KSU_PG_BACKUP_DSN','verify':'KSU_PG_BACKUP_DSN','restore':'KSU_PG_ADMIN_DSN','migrate':'KSU_PG_ADMIN_DSN'}.get(args.operation,{'runtime':'KSU_DATABASE_URL','admin':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN'}[args.role])
+        if args.operation=='template':
+            from .production_init import template
+            atomic_json(Path(args.output),template(),exclusive=True)
+            print(json.dumps({'template_written':True,'owner_approval_required':True}));return
+        key={'bootstrap':'KSU_PG_BOOTSTRAP_DSN','init-schema':'KSU_PG_ADMIN_DSN','init-production':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN','verify':'KSU_PG_BACKUP_DSN','restore':'KSU_PG_ADMIN_DSN','migrate':'KSU_PG_ADMIN_DSN'}.get(args.operation,{'runtime':'KSU_DATABASE_URL','admin':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN'}[args.role])
         dsn=binding(key);tls(dsn)
         if args.operation=='bootstrap':result=bootstrap(dsn,json.load(sys.stdin))
-        elif args.operation=='migrate':result=migrate(args.source,dsn,args.output)
+        elif args.operation=='init-schema':
+            if conninfo_to_dict(dsn)['user']!='ksu_admin':raise ValueError('Offline schema admin required')
+            initialize(dsn,'ksu_runtime','ksu_backup');result={'schema':4,'business_data_created':False}
+        elif args.operation=='init-production':
+            from .production_init import initialize as setup
+            result=setup(dsn,json.loads(Path(args.source).read_text(encoding='utf-8-sig')),args.output)
+        elif args.operation=='migrate':
+            if os.getenv('KSU_DEPLOYMENT_PROFILE')=='production':raise ValueError('Clean production pilot forbids SQLite migration')
+            result=migrate(args.source,dsn,args.output)
         elif args.operation=='verify':result=verify_report(dsn,args.report)
         elif args.operation=='preflight':result=preflight(dsn,args.role)
         elif args.operation=='backup':
