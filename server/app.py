@@ -146,6 +146,7 @@ def create_app(path=None, origin=None, secure=None):
         with db.connect() as con:con.execute('select 1').fetchone()
         if release_policy:
             result={'status':'ok','data':'application','build':os.getenv('KSU_RELEASE_BUILD_SHA','unknown'),'offline':release_policy.mode}
+            result['backend']=db.backend
             local=getattr(app.state,'local_backups',None)
             if local:result['localBackup']=local.summary()
             return result

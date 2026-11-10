@@ -54,6 +54,12 @@ def grant_runtime(connection,role):
     properties=connection.execute('select rolsuper,rolbypassrls,rolinherit,rolcreatedb,rolcreaterole,rolreplication from pg_roles where rolname=%s',(role,)).fetchone()
     if not properties or any(properties):raise ValueError('Runtime role must exist: NOSUPERUSER NOBYPASSRLS NOINHERIT')
     if connection.execute('select exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member where r.rolname=%s)',(role,)).fetchone()[0]:raise ValueError('Runtime must not inherit or SET ROLE to other roles')
+    # --no-acl restore otherwise recreates functions with PostgreSQL's PUBLIC EXECUTE
+    # defaults. Restore the same closed boundary as the source schema before granting.
+    connection.execute('REVOKE ALL ON SCHEMA ksu FROM PUBLIC')
+    connection.execute('REVOKE ALL ON ALL TABLES IN SCHEMA ksu FROM PUBLIC')
+    connection.execute('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ksu FROM PUBLIC')
+    connection.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA ksu REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC')
     connection.execute(sql.SQL('REVOKE ALL ON ALL TABLES IN SCHEMA ksu FROM {}').format(ident))
     connection.execute(sql.SQL('GRANT USAGE ON SCHEMA ksu TO {}').format(ident))
     connection.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA ksu TO {}').format(ident))
@@ -68,12 +74,21 @@ def grant_runtime(connection,role):
 
 def grant_backup(connection,role):
     ident=sql.Identifier(role)
-    properties=connection.execute('select rolsuper,rolbypassrls,rolcreatedb,rolcreaterole from pg_roles where rolname=%s',(role,)).fetchone()
-    if not properties or properties!=(False,True,False,False):raise ValueError('Backup role requires only BYPASSRLS, no administrator permissions')
+    properties=connection.execute('select rolsuper,rolbypassrls,rolcreatedb,rolcreaterole,rolinherit,rolreplication from pg_roles where rolname=%s',(role,)).fetchone()
+    if not properties or any(properties[i] for i in (0,2,3,4,5)):raise ValueError('Backup role must have no administrator/inherited/replication permissions')
+    if connection.execute('select exists(select 1 from pg_auth_members where member=(select oid from pg_roles where rolname=%s))',(role,)).fetchone()[0]:raise ValueError('Backup memberships forbidden')
     connection.execute(sql.SQL('REVOKE ALL ON ALL TABLES IN SCHEMA ksu FROM {}').format(ident))
     connection.execute(sql.SQL('GRANT USAGE ON SCHEMA ksu TO {}').format(ident))
     connection.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA ksu TO {}').format(ident))
     connection.execute(sql.SQL('GRANT SELECT ON ALL SEQUENCES IN SCHEMA ksu TO {}').format(ident))
+    if not properties[1]:
+        # Managed production uses NOBYPASSRLS: allow only this role's SELECT through
+        # explicit policies, with no cluster-wide RLS bypass or data mutation rights.
+        for (table,) in connection.execute("select relname from pg_class where relnamespace='ksu'::regnamespace and relrowsecurity"):
+            connection.execute(sql.SQL('DROP POLICY IF EXISTS managed_backup_read ON ksu.{}').format(sql.Identifier(table)))
+            connection.execute(sql.SQL('CREATE POLICY managed_backup_read ON ksu.{} FOR SELECT TO {} USING(true)').format(sql.Identifier(table),ident))
+        for function in ('actor_id()','actor_role()','accessible(text)'):
+            connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
 
 
 def upgrade_schema(connection):
