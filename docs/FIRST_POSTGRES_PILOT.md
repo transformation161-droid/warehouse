@@ -19,8 +19,9 @@
 ## Порядок владельца
 
 Взять source bundle успешного CI нового Draft PR, сверить SHA/manifest, собрать
-`Dockerfile.managed-postgres` в `ksu-managed:rc`. В пакете нет seed.json, БД, пользовательских
-паролей или сертификатов. Пример воспроизведения из утверждённого checkout:
+`Dockerfile.managed-postgres` в `ksu-managed:rc`. PowerShell-скрипты из `tools/` взять из
+checkout **того же полного SHA**: в source bundle для сборки они не включены. В пакете нет
+seed.json, БД, пользовательских паролей или сертификатов. Пример воспроизведения из утверждённого checkout:
 
 ```sh
 python -m deploy.release_candidate.bundle --profile postgresql --ref <FULL_SHA> --output <NEW_SOURCE_FOLDER>
@@ -87,12 +88,28 @@ DPAPI: нужен согласованный защищённый диск/но�
 Не повторять инициализацию, не очищать БД и не генерировать новые пароли поверх существующих.
 Владелец приватно сверяет состояние/извлекает сохранённые файлы; stdout не содержит секретов.
 
-6. До входов приложения выполнить `Operation verify` ролью backup с `Source` на
-   `production\setup-report.json`, новым output, как в №37. Затем `Operation backup` и
-   `Test-ManagedPostgresBackup.ps1`: новая локальная PG, все 16 fingerprints, constraints,
-   grants и пустые sessions. [Команды backup/independent restore](POSTGRES_PRODUCTION.md#backup-и-восстановление-в-эксплуатации).
-   Проверенные рабочие записи и пароли не отправлять в CI/Codex; CI использует только
-   временные синтетические аккаунты, их credential-файлы не попадают в artifacts/логи.
+6. **До первого входа** сверить все 16 таблиц с новым отчётом, затем сделать backup и
+   независимый restore. Не использовать старый `migration.json` из инструкции переноса №37:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-ManagedPostgres.ps1 `
+  -Operation verify -EnvFile 'D:\KSU-private\managed-config\backup.env' `
+  -Source 'D:\KSU-private\initial-setup-<time>\production\setup-report.json' `
+  -OutputDirectory 'D:\KSU-private\verify-<time>' -Image 'ksu-managed:rc'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-ManagedPostgres.ps1 `
+  -Operation backup -EnvFile 'D:\KSU-private\managed-config\backup.env' `
+  -OutputDirectory 'D:\KSU-private\backup-<time>' -Image 'ksu-managed:rc'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-ManagedPostgresBackup.ps1 `
+  -Backup 'D:\KSU-private\backup-<time>\backup.ksubackup' `
+  -OutputDirectory 'D:\KSU-private\restore-test-<time>' -Image 'ksu-managed:rc'
+```
+
+Restore создаёт отдельную локальную PG; заранее загрузить pinned postgres:17 image из скрипта.
+Ожидать verified=true, совпадение всех fingerprints/constraints/grants и пустые sessions.
+[Эксплуатационный backup](POSTGRES_PRODUCTION.md#backup-и-восстановление-в-эксплуатации).
+Рабочие записи и пароли не отправлять в CI/Codex; CI использует временные синтетические
+аккаунты, их credential-файлы не попадают в artifacts/логи.
+
 7. После отдельного go/no-go ручная доставка в **существующее** приложение. Убрать старые
    автосвязи GitHub→Amvera до merge, `KSU_DB`/bootstrap/admin/backup secrets; передать только
    runtime DSN с verify-full. UID10001, одна реплика, прежний origin, новый постоянный production
