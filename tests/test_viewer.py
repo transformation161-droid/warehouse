@@ -93,7 +93,11 @@ class Viewer(unittest.TestCase):
     def test_shared_details_photos_and_all_report_formats_are_scoped_and_read_only(self):
         photo,foreign,orphan=self.detailed_fixture();before=self.facts()
         state=self.viewer.get('/api/state').json()
-        self.assertEqual(state['inspections'][0]['results'][0]['photo'],photo)
+        self.assertEqual(state['inspections'][0]['results'][0]['photo'],photo+'?expectedUser=viewer')
+        # A photo URL issued for viewer cannot borrow a manager cookie.
+        pinned=state['inspections'][0]['results'][0]['photo']
+        self.assertEqual(self.viewer.get(pinned).status_code,200)
+        self.assertEqual(self.manager.get(pinned).status_code,403)
         self.assertEqual(len(state['inspections'][0]['results']),22)
         self.assertEqual(state['inspections'][0]['inspector'],'')
         self.assertEqual(state['inventoryLines'][0]['price'],12.5)

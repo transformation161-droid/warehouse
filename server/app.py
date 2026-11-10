@@ -76,7 +76,9 @@ def create_app(path=None, origin=None, secure=None):
         if request.url.path.startswith('/api/') and request.url.path not in ('/api/login','/api/logout') and request.cookies.get('ksu_session'):
             with db.connect() as con:
                 reader=con.execute('select u.id,u.role from sessions s join users u on u.id=s.user_id where s.token_hash=? and s.expires>? and u.active=1',(digest(request.cookies['ksu_session']),time.time())).fetchone()
-            if reader and request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=reader[0]:
+            expected=[request.headers.get('X-KSU-Expected-User')]
+            if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
+            if reader and any(value and value!=reader[0] for value in expected):
                 return JSONResponse({'detail':'Сессия изменилась. Локальные очереди сохранены.'},status_code=403,headers={'Cache-Control':'no-store','X-KSU-Identity-Mismatch':'1'})
             if reader and reader[1]=='viewer':
                 from .viewer import authorize
@@ -123,7 +125,9 @@ def create_app(path=None, origin=None, secure=None):
         if actor['role']=='viewer' and not getattr(db,'viewer_read_capable',True):
             fail('Для просмотра требуется явное обновление функций чтения на новой PostgreSQL-копии',403)
         if release_policy:release_policy.routes(request.url.path)
-        if request.headers.get('X-KSU-Expected-User') and request.headers['X-KSU-Expected-User']!=actor['id']:
+        expected=[request.headers.get('X-KSU-Expected-User')]
+        if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
+        if any(value and value!=actor['id'] for value in expected):
             raise HTTPException(403,'Сессия принадлежит другому пользователю. Очередь сохранена.',headers={'X-KSU-Identity-Mismatch':'1'})
         if request.headers.get('X-KSU-Offline-Deployment') and request.headers['X-KSU-Offline-Deployment']!=getattr(app.state,'offline_deployment_id',getattr(app.state,'offline_lab_id',None)):
             fail('Другая установка приложения. Очередь сохранена.',409)

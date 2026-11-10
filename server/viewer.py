@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+from urllib.parse import quote
 from fastapi import HTTPException
 from .service import fail
 
@@ -97,7 +98,8 @@ def snapshot(db,con,actor):
         for target in [data,*data.get('results',[])]:
             for key in ('photo','evidence'):
                 url=target.get(key,'');match=re.fullmatch('/api/media/('+MEDIA_ID+')',url)
-                if key in target and (not match or match[1] not in allowed_media):target[key]=''
+                if key in target:
+                    target[key]=url+'?expectedUser='+quote(actor['id'],safe='') if match and match[1] in allowed_media else ''
         if collection=='inspections':data.setdefault('results',[]);data['inspector']=''
         state[collection].append(data)
     # Reject dangling/cross-site parent links as well as a forged siteId in payload JSON.

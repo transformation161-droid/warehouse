@@ -118,7 +118,9 @@ def run(backend):
                     assert context.request.get(origin+photo).status==200
                     assert context.request.get(origin+foreign).status==404 and context.request.get(origin+orphan).status==404
                     # A different account's cookie must not authorize a viewer download or state request.
+                    pinned=page.evaluate("db.inspections.find(row=>row.id==='demo-shared-act').results[0].photo")
                     changed=context.request.post(origin+'/api/login',headers={'Origin':origin},data={'username':f['logins']['manager'],'password':f['accounts']['manager']});assert changed.status==200
+                    assert context.request.get(origin+pinned).status==403
                     assert page.evaluate("async()=>{try{await api('state');return 0}catch(e){return e.status}}") ==403
                     expect(page.locator('#login-form')).to_be_visible()
                     assert 'PRIVATE-' not in page.content()
