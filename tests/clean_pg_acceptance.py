@@ -59,6 +59,13 @@ def contracts(clients,credentials):
     assert change(owner,'questions','qa-added',{'section':'СИНТЕТИКА · Новый раздел','title':'СИНТЕТИКА · Новый пункт','position':99}).status_code==200
     current=field.get('/api/checklists/current').json();assert current['id']!=old['id'] and current['questions'][0]['id']==second['id']
     assert first['id'] not in {q['id'] for q in current['questions']} and len(current['questions'])==22
+    audit=owner.get('/api/history',params={'collection':'questions','record_id':first['id']}).json()
+    edited=next(a for a in audit if a['operation']=='update')
+    assert edited['actor_id']==credentials['manager']['id'] and edited['at']
+    assert edited['before']['title']==first['title'] and not edited['before']['archived']
+    assert edited['after']['archived'] and edited['after']['section']=='СИНТЕТИКА · Новый раздел'
+    order_audit=owner.get('/api/history',params={'collection':'questions','record_id':second['id']}).json()
+    assert any(a['operation']=='update' and a['after']['position']==0 and a['actor_id']==credentials['manager']['id'] for a in order_audit)
     assert field.get('/api/checklists/'+old['id']).json()==old
     before=next(a for a in field.get('/api/state').json()['inspections'] if a['id']=='qa-closed')
     assert before['results'][0]['title']==first['title'] and before['checklistVersion']==old['id']
@@ -127,6 +134,10 @@ def browser_check(origin,cert,credentials):
                 if button.count():
                     with page.expect_response(lambda r:'/api/changes' in r.url and r.request.method=='POST') as saved:button.click()
                     assert saved.value.status==200
+                sections=page.evaluate('[...new Set(activeQuestions().map(q=>q.section))]')
+                with page.expect_response(lambda r:'/api/changes' in r.url and r.request.method=='POST') as saved:page.locator('[data-action="checklist-section-down"]:enabled').first.click()
+                assert saved.value.status==200
+                expect(page.locator('[data-checklist-section]').first).to_have_attribute('data-checklist-section',sections[1])
                 # First real-account planning must use assigned user IDs, not 'inspector'.
                 page.evaluate("navTo('schedule')");page.locator('[data-action="add-visit"]').click()
                 page.locator('#visit-form [name="siteId"]').select_option('qa-site')

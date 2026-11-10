@@ -18,7 +18,7 @@ function editChecklistQuestion(id){
 }
 async function changeChecklist(change){
  if(ui.role!=='manager'||isReadOnly())return toast('Изменение шаблона доступно только руководителю',true);
- return mutate(()=>{activeQuestions().forEach((q,i)=>{q.position=i+1});change();closeModal()});
+ return mutate(()=>{activeQuestions().forEach((q,i)=>{q.position=i+1});change();const rows=activeQuestions();[...new Set(rows.map(q=>q.section))].flatMap(section=>rows.filter(q=>q.section===section)).forEach((q,i)=>{q.position=i+1});closeModal()});
 }
 // Capture only our controls before legacy delegation. No bypass of api/mutate/CSRF/ACL.
 document.addEventListener('click',async event=>{
@@ -29,7 +29,7 @@ document.addEventListener('click',async event=>{
  if(ui.role!=='manager'||isReadOnly())return toast('Только руководитель изменяет шаблон',true);
  const id=button.dataset.id;
  if(action==='checklist-archives'){ui.checklistArchives=!ui.checklistArchives;render();return}
- if(action==='checklist-add'||action==='checklist-edit'){editChecklistQuestion(id);return}
+ if(action==='checklist-add'||action==='checklist-edit'){if(action==='checklist-add'&&activeQuestions().length>=200)return toast('Допускается не более 200 действующих пунктов',true);editChecklistQuestion(id);return}
  if(action==='checklist-save'){
   const form=document.getElementById('checklist-question-form');if(!form?.reportValidity())return;
   const data=Object.fromEntries(new FormData(form));
@@ -40,7 +40,7 @@ document.addEventListener('click',async event=>{
   if(activeQuestions().length<=1)return toast('Оставьте хотя бы один действующий пункт',true);
   if(q&&confirm('Архивировать пункт? Акты и ранее выданные пакеты сохранят его.'))await changeChecklist(()=>{q.archived=true});return;
  }
- if(action==='checklist-restore'){if(q)await changeChecklist(()=>{q.position=activeQuestions().length+1;q.archived=false});return}
+ if(action==='checklist-restore'){if(activeQuestions().length>=200)return toast('Допускается не более 200 действующих пунктов',true);if(q)await changeChecklist(()=>{q.position=activeQuestions().length+1;q.archived=false});return}
  if(action==='checklist-up'||action==='checklist-down'){
   if(!q)return;const rows=activeQuestions().filter(item=>item.section===q.section);const index=rows.findIndex(item=>item.id===id),next=index+(action==='checklist-up'?-1:1);
   if(next<0||next>=rows.length)return;
