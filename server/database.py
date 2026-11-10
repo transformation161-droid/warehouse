@@ -170,6 +170,12 @@ def is_postgres(value):
     return value=='postgresql' or value.startswith(('postgresql://','postgres://')) or bool(re.match(r'\w+=',value))
 
 
+LEGACY_SCHEMA=SCHEMA
+from .viewer_schema import USER_SQL
+_old_user=SCHEMA[SCHEMA.index('create table if not exists users('):SCHEMA.index('create table if not exists user_sites(')]
+SCHEMA=SCHEMA.replace(_old_user,USER_SQL.replace('create table users','create table if not exists users')+';\n')
+
+
 class Database:
     backend='sqlite'
     decision_order='(select created_at from imports where hash=d.import_hash)'
@@ -193,8 +199,13 @@ class Database:
         self.path = Path(path)
         if os.getenv('KSU_SCHEMA_MODE')=='verified' or os.getenv('KSU_OFFLINE_MODE') is not None:
             from .release_schema import inspect_sqlite
-            if inspect_sqlite(self.path)['version']!=3:raise ValueError('Explicit offline schema migration required before release startup')
+            if inspect_sqlite(self.path)['version']!=4:raise ValueError('Explicit offline schema migration required before release startup')
             return
+        if self.path.is_file():
+            from contextlib import closing
+            with closing(sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro',uri=True)) as probe:
+                users=probe.execute("select sql from sqlite_master where name='users'").fetchone()
+                if users and "'viewer'" not in users[0]:raise ValueError('Explicit private-copy user-role migration required')
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as con:
             con.executescript(SCHEMA)
@@ -204,6 +215,9 @@ class Database:
             if not con.execute("select 1 from sqlite_master where type='table' and name='operation_receipts'").fetchone():
                 from .offline_schema import schema as offline_schema
                 con.executescript(offline_schema())
+            from .viewer_schema import sqlite_guards
+            from .pg_admin import TABLES
+            con.executescript(sqlite_guards(TABLES))
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -223,7 +237,15 @@ class Database:
                 con.close()
                 raise ValueError('Existing database exceeds the configured size limit')
         con.create_function('actor_id', 0, lambda: actor['id'] if actor else '')
-        con.create_function('actor_role', 0, lambda: actor['role'] if actor else '')
+        def active_role():
+            if not actor:return ''
+            row=con.execute('select role from users where id=? and active=1',(actor['id'],)).fetchone()
+            return row[0] if row else ''
+        con.create_function('actor_role',0,active_role)
+        if actor and active_role()=='viewer':
+            denied={getattr(sqlite3,key) for key in dir(sqlite3) if key.startswith(('SQLITE_CREATE_','SQLITE_DROP_'))}
+            denied.update({sqlite3.SQLITE_INSERT,sqlite3.SQLITE_UPDATE,sqlite3.SQLITE_DELETE,sqlite3.SQLITE_ALTER_TABLE,sqlite3.SQLITE_ATTACH,sqlite3.SQLITE_DETACH,sqlite3.SQLITE_PRAGMA})
+            con.set_authorizer(lambda op,a,b,c,d:sqlite3.SQLITE_DENY if op in denied else sqlite3.SQLITE_OK)
         con.create_function('sha256',1,lambda value:hashlib.sha256(value.encode()).hexdigest())
         con.create_function('accessible',1,lambda site:bool(actor and (actor['role']=='manager' or con.execute(
             'select 1 from user_sites where user_id=? and site_id=?',(actor['id'],site)).fetchone())))
@@ -239,6 +261,9 @@ class Database:
             return dict(row) if row else None
 
     def snapshot(self, con, actor):
+        if actor['role']=='viewer':
+            from .viewer import snapshot
+            return snapshot(self,con,actor)
         state = {key: [] for key in ['sites','questions','inspections','findings','inventories','inventoryLines','visits']}
         rows = con.execute('select * from records order by created_at desc, id').fetchall()
         allowed = {r[0] for r in con.execute('select site_id from user_sites where user_id=?', (actor['id'],))}
@@ -252,12 +277,12 @@ class Database:
             state[collection].sort(key=lambda item: (0,int(item['id'][1:]))
                                    if item['id'].startswith(prefix) and item['id'][1:].isdigit()
                                    else (1,item['createdAt']))
-        state['meta'] = {'mode':'work' if os.getenv('KSU_OFFLINE_MODE') is not None else 'demo', 'name':'ИНСТРАКТ · КСУ Контроль'}
+        state['meta'] = {'mode':'work' if os.getenv('KSU_OFFLINE_MODE') is not None else 'demo', 'name':'ИНСТРАКТ | Складской учет'}
         state['assignees'] = [
             {'id':u['id'],'name':u['name'], 'siteIds':
              [s['id'] for s in state['sites']] if u['role']=='manager' else
              [r[0] for r in con.execute('select site_id from user_sites where user_id=?',(u['id'],))]}
-            for u in con.execute('select id,name,role from users where active=1 order by name')
+            for u in con.execute("select id,name,role from users where active=1 and role in ('manager','inspector') order by name")
         ] if actor['role']=='manager' else []
         state['activities'] = []
         state['version'] = 2

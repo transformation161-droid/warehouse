@@ -19,6 +19,7 @@ class Policy:
 
     @classmethod
     def environment(cls):
+        if os.getenv('KSU_VIEWER_ACCESS','enabled') not in ('enabled','off'):raise ValueError('Invalid viewer access mode')
         mode=os.getenv('KSU_OFFLINE_MODE','off')
         if mode not in ('off','staging','pilot'):raise ValueError('Invalid offline mode')
         identity=os.getenv('KSU_OFFLINE_DEPLOYMENT_ID','')

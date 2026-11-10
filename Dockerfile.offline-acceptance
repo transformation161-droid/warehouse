@@ -1,0 +1,8 @@
+ARG RELEASE_IMAGE=ksu-offline:rc
+FROM ${RELEASE_IMAGE}
+# Explicit synthetic seed helper, never included in Dockerfile.offline-release.
+USER 0:0
+COPY --chmod=0444 tests/release_acceptance_seed.py /app/harness/seed.py
+RUN chmod 0555 /app/harness && chmod 0444 /app/harness/seed.py
+USER 10001:10001
+ENTRYPOINT ["python","-m","harness.seed","/data"]

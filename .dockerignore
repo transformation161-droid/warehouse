@@ -36,3 +36,10 @@
 !release_online/*.html
 !release_online/*.css
 !release_online/*.txt
+
+!assets/
+!assets/instrakt-logo.svg
+
+!Dockerfile.offline-acceptance
+!tests/
+!tests/release_acceptance_seed.py

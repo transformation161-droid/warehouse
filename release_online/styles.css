@@ -6,3 +6,5 @@
 /* Совместная версия: исходная сетка и палитра сохранены. */
 .login-shell{min-height:100vh;display:grid;place-items:center;padding:20px}.login-card{width:min(100%,430px)}.login-card h1{font-size:22px}.login-card .logo-mark{margin-bottom:15px}.login-card button{width:100%}#login-error{color:#a63a45;min-height:20px}.sync-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:#edf4fa;border-radius:10px;font-size:11px;margin-bottom:16px}.sync-status .btn{font-size:11px;padding:6px 9px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.modal-footer{flex-wrap:wrap}
 @media(max-width:760px){.topbar-right>.role-select{max-width:105px;white-space:normal}.topbar-right .btn{font-size:10px;padding:6px}.sync-status{align-items:stretch}.demo-badge{display:none}}
+
+.sidebar .logo-mark img{filter:invert(1)} .logo-mark{border:0;background:transparent}

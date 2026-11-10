@@ -13,6 +13,7 @@ RUN --mount=type=secret,id=proxy_ca \
     pip install --no-cache-dir -r requirements.txt
 COPY server/*.py ./server/
 COPY server/postgres/*.sql ./server/postgres/
+COPY assets/instrakt-logo.svg ./assets/instrakt-logo.svg
 COPY offline/ ./offline/
 COPY release_online/ ./release_online/
 COPY deploy/offline_release/ ./deploy/offline_release/

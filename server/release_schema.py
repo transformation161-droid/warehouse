@@ -12,16 +12,19 @@ from functools import lru_cache
 from .pg_admin import TABLES,V2_TABLES,LEGACY_TABLES,fingerprints
 
 
-@lru_cache(maxsize=1)
-def expected_release_schema():
+@lru_cache(maxsize=2)
+def expected_release_schema(version=4):
     # Trusted DDL is compiled only in memory, never against the supplied database.
-    from .database import SCHEMA
+    from .database import SCHEMA,LEGACY_SCHEMA
     from .decision_version_schema import schema as decisions
     from .offline_schema import schema as offline
     with closing(sqlite3.connect(':memory:')) as con:
         con.create_function('sha256',1,lambda value:hashlib.sha256(str(value).encode()).hexdigest(),deterministic=True)
-        con.executescript(SCHEMA);con.executescript(decisions());con.executescript(offline())
-        return {(kind,name):' '.join(sql.split()).lower() for kind,name,sql in con.execute(
+        con.executescript(SCHEMA if version==4 else LEGACY_SCHEMA);con.executescript(decisions());con.executescript(offline())
+        if version==4:
+            from .viewer_schema import sqlite_guards
+            con.executescript(sqlite_guards(TABLES))
+        return {(kind,name):' '.join(sql.replace(chr(34)+'users'+chr(34),'users').split()).lower() for kind,name,sql in con.execute(
             "select type,name,sql from sqlite_master where type in ('table','trigger') and sql is not null")}
 
 
@@ -42,9 +45,10 @@ def inspect_sqlite(path):
         if not con.execute('select 1 from users where active=1').fetchone():raise ValueError('No existing active users')
         version=versions[frozenset(business)]
         if version==3:
-            actual={(kind,name):' '.join(sql.split()).lower() for kind,name,sql in con.execute(
+            actual={(kind,name):' '.join(sql.replace(chr(34)+'users'+chr(34),'users').split()).lower() for kind,name,sql in con.execute(
                 "select type,name,sql from sqlite_master where type in ('table','trigger') and sql is not null")}
-            if actual!=expected_release_schema():raise ValueError('Unexpected table constraints/triggers; explicit review required')
+            if actual==expected_release_schema(4):version=4
+            elif actual!=expected_release_schema(3):raise ValueError('Unexpected table constraints/triggers; explicit review required')
         return {'version':version,'tables':tuple(t for t in TABLES if t in business)}
 
 
@@ -66,15 +70,17 @@ def prepare_sqlite(source,destination,closed_backup=False):
         from .database import Database
         # This command is an explicit migration. Runtime release startup never executes DDL.
         if os.getenv('KSU_OFFLINE_MODE') is not None or os.getenv('KSU_SCHEMA_MODE')=='verified':raise ValueError('Run migration separately from release runtime configuration')
+        from .viewer_schema import upgrade_users_copy
+        upgrade_users_copy(copy)
         Database(copy)
         with closing(sqlite3.connect(copy)) as con:
             if fingerprints(con,tables=inventory['tables'])!=before:raise ValueError('Existing records/users/audit changed during migration')
             after=fingerprints(con)
         from .maintenance import snapshot_database
         target=destination/'ksu.sqlite3';snapshot_database(copy,target)
-        if inspect_sqlite(target)['version']!=3:raise ValueError('Final migrated copy failed release schema verification')
+        if inspect_sqlite(target)['version']!=4:raise ValueError('Final migrated copy failed release schema verification')
         if checksum(source)!=source_hash or any(Path(str(source)+suffix).exists() for suffix in ('-wal','-shm','-journal')):raise ValueError('Source changed during preparation; do not start staging')
-        report={'source_sha256':source_hash,'schema_before':inventory['version'],'schema_after':3,'source_unchanged':True,
+        report={'source_sha256':source_hash,'schema_before':inventory['version'],'schema_after':4,'source_unchanged':True,
                 'all_original_tables_preserved':True,'sessions_revoked':True,'tables':after}
         descriptor=os.open(destination/'migration-report.json',os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
         with os.fdopen(descriptor,'w') as handle:json.dump(report,handle,indent=2)

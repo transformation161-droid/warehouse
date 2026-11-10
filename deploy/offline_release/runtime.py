@@ -29,7 +29,8 @@ def configure():
         source=Path(os.environ.get('KSU_DB','/data/ksu.sqlite3'))
         if not source.resolve().is_relative_to(root) or source.is_symlink():raise ValueError('Database must be an existing regular file under /data')
         from server.release_schema import inspect_sqlite
-        if inspect_sqlite(source)['version']!=3:raise ValueError('Explicit migration on a separate copy required')
+        if inspect_sqlite(source)['version']!=4:raise ValueError('Explicit migration on a separate copy required')
+    os.environ['KSU_BACKUP_VOLUME_ROOT']=str(root)
     os.umask(0o077)
     return descriptor
 

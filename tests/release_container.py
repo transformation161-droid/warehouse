@@ -24,6 +24,7 @@ def run(image):
         root=Path(directory);data=root/'data';data.mkdir();cert=root/'cert.pem';key=root/'key.pem'
         source=root/'live.sqlite3';seed_demo(Database(source),'synthetic owner password','synthetic inspector password')
         with sqlite3.connect(source) as con:
+            con.create_function('actor_role',0,lambda:'')
             con.execute("update users set username='field-inspector' where id='inspector'")
         closed=root/'backup.sqlite3';snapshot_database(source,closed);prepare_sqlite(closed,data/'candidate',closed_backup=True)
         subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=KSU synthetic release',

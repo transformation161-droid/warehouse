@@ -40,7 +40,7 @@ def run():
         target=root/'candidate/ksu.sqlite3';migrated=fingerprint(target)
         for table in before:
             if table not in ('sessions','attempts','sqlite_sequence'):assert migrated[table]==before[table],table
-        assert report['schema_before']==0 and report['schema_after']==3
+        assert report['schema_before']==0 and report['schema_after']==4
         malformed=root/'unsupported.sqlite3'
         with closing(sqlite3.connect(backup)) as src,closing(sqlite3.connect(malformed)) as dst:
             src.backup(dst);dst.execute('alter table users add column unsupported_extension text');dst.commit()
@@ -89,7 +89,7 @@ def run():
                 for client in clients.values():client.close()
                 app.state.import_jobs.close()
         assert checksum(source)==original
-        return {'synthetic_only':True,'source_git':BASE,'schema_before':0,'schema_after':3,
+        return {'synthetic_only':True,'source_git':BASE,'schema_before':0,'schema_after':4,
                 'original_unchanged':True,'old_business_tables_identical':True,'users_passwords_audit_preserved':True,
                 'both_logins_photos_thumbnails_xlsx_pdf':True,'offline_completion_receipt_no_duplicates':True,
                 'legacy_inspector_plan_permissions':True,'records_before':before['records']['count'],'media_before':before['media']['count']}

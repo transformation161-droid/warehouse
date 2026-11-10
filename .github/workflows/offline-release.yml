@@ -1,7 +1,7 @@
-name: Offline release preparation
+name: Viewer branding and scheduled backup acceptance
 on:
   pull_request:
-    branches: [feat/offline-stage2-visit-sync]
+    branches: [release/offline-mvp-candidate]
 permissions:
   contents: read
 jobs:
@@ -26,6 +26,7 @@ jobs:
           node --check offline/transport.js
           node --check release_online/app.js
           node --check release_online/sync.js
+          node --check release_online/viewer.js
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,7 +46,9 @@ jobs:
       - name: Existing accounts, deployed online UI, offline restart and lost commit replies
         env:
           BACKEND: ${{ matrix.backend }}
-        run: python -u -m tests.offline_stage2 --release --backend "$BACKEND"
+        run: |
+          python -u -m tests.offline_stage2 --release --backend "$BACKEND"
+          python -u -m tests.viewer_browser --backend "$BACKEND"
   artifact:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -59,6 +62,9 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt
       - run: docker build -f Dockerfile.offline-release --build-arg KSU_BUILD_SHA="$GITHUB_SHA" -t ksu-offline:rc .
       - run: python -m tests.release_container --image ksu-offline:rc
+      - run: docker build -f Dockerfile.offline-acceptance --build-arg RELEASE_IMAGE=ksu-offline:rc -t ksu-offline-acceptance:rc .
+      - run: python -m tests.acceptance_image --image ksu-offline-acceptance:rc
+      - run: python -m tests.release_scheduled_backup --image ksu-offline:rc
       - name: Independent large SQLite backup and restore within 0.5 CPU / 1 GiB
         run: |
           mkdir -p "$RUNNER_TEMP/ksu-synthetic"
@@ -72,8 +78,14 @@ jobs:
           persist-credentials: false
       - shell: powershell
         run: |
-          foreach ($file in @('tools/Prepare-Offline-Staging.ps1','tools/New-Offline-Backup.ps1')) {
+          foreach ($file in @('tools/Prepare-Offline-Staging.ps1','tools/New-Offline-Backup.ps1','tools/Start-Release-Acceptance.ps1','tools/Set-Release-Acceptance.ps1','tools/Register-OwnerBackup.ps1','tools/Invoke-OwnerBackup.ps1','tools/Test-OwnerBackup.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file),[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           }
+      - name: Pure daily task definition, no registration or credentials
+        shell: powershell
+        run: |
+          $task=& .\tools\Register-OwnerBackup.ps1 -Origin 'https://127.0.0.1:8017' -At '21:00' -PlanOnly
+          if (-not $task.Settings.StartWhenAvailable -or $task.Settings.MultipleInstances -ne 2 -or $task.Principal.RunLevel -ne 0 -or $task.Triggers[0].DaysInterval -ne 1) { throw 'Unsafe task settings' }
+          if ($task.Actions[0].Arguments -match 'password|credential|secret' -or $task.Actions[0].Arguments -notmatch 'Invoke-OwnerBackup.ps1') { throw 'Secrets or wrong executable in task arguments' }

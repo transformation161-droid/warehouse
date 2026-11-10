@@ -87,7 +87,7 @@ class Release(unittest.TestCase):
         self.assertEqual(self.facts(),before)
 
     def test_policy_refuses_lab_wildcards_and_startup_ddl(self):
-        for values in ({'KSU_BOOTSTRAP_DEMO':'1'},{'KSU_OFFLINE_VISIT_LAB_ID':'a'*32},{'KSU_OFFLINE_USER_IDS':'*'}):
+        for values in ({'KSU_BOOTSTRAP_DEMO':'1'},{'KSU_OFFLINE_VISIT_LAB_ID':'a'*32},{'KSU_OFFLINE_USER_IDS':'*'},{'KSU_VIEWER_ACCESS':'all'}):
             with patch.dict(os.environ,values),self.assertRaises(ValueError):Policy.environment()
         # Unknown/partial schemas are refused without creating missing tables.
         path=Path(self.temp.name)/'unknown.sqlite3'
@@ -107,7 +107,7 @@ class Migration(unittest.TestCase):
             closed=root/'closed.sqlite3';snapshot_database(source,closed)
             before=checksum(closed);report=prepare_sqlite(closed,root/'candidate',closed_backup=True)
             self.assertTrue(report['all_original_tables_preserved']);self.assertEqual(checksum(closed),before)
-            self.assertEqual(inspect_sqlite(root/'candidate/ksu.sqlite3')['version'],3)
+            self.assertEqual(inspect_sqlite(root/'candidate/ksu.sqlite3')['version'],4)
             with self.assertRaises(FileExistsError):prepare_sqlite(closed,root/'candidate',closed_backup=True)
 
     def test_full_frozen_wal_copy_includes_committed_changes_and_never_touches_input(self):
@@ -117,6 +117,7 @@ class Migration(unittest.TestCase):
             seed_demo(Database(live),'synthetic manager password','synthetic inspector password')
             frozen=root/'frozen';frozen.mkdir()
             with closing(sqlite3.connect(live)) as con:
+                con.create_function('actor_role',0,lambda:'')
                 con.execute('pragma wal_autocheckpoint=0')
                 con.execute("update users set name='Synthetic WAL marker' where id='inspector'");con.commit()
                 for suffix in ('','-wal','-shm'):

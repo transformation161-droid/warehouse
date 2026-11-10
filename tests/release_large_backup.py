@@ -22,6 +22,7 @@ def run():
             for role in ('manager','inspector'):
                 con.execute('insert into users values(?,?,?,?,?,1)',(role,'synthetic-'+role,'Synthetic '+role,role,password_hash('synthetic '+role+' password')))
         with closing(sqlite3.connect(source)) as con:
+            con.create_function('actor_role',0,lambda:'') # Explicit synthetic administrator connection.
             con.execute('pragma journal_mode=delete')
             for index in range(75):
                 con.execute('insert into media values(?,?,?,?,?,?)',

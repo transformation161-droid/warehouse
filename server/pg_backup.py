@@ -105,7 +105,7 @@ def restore_database(source,dsn,runtime_role,backup_role=None):
         if any(item.compress_type!=zipfile.ZIP_STORED for item in archive.infolist()):raise BackupError('Compressed/untrusted package')
         if archive.getinfo('manifest.json').file_size>65536:raise BackupError('Manifest too large')
         manifest=json.loads(archive.read('manifest.json'))
-        if manifest.get('format')!='ksu-pg-backup-v1' or manifest.get('schema_version') not in (1,2,3):raise BackupError('Unsupported backup format')
+        if manifest.get('format')!='ksu-pg-backup-v1' or manifest.get('schema_version') not in (1,2,3,4):raise BackupError('Unsupported backup format')
         expected_tables=tables_for_version(manifest['schema_version'])
         if set(manifest.get('tables',{}))!=set(expected_tables):raise BackupError('Unexpected manifest tables')
         dump=Path(folder)/'database.dump'

@@ -259,7 +259,7 @@ class PostgreSQLOffline(Offline):
             upgrade(dsn,self.role);upgrade(dsn,self.role)
             with psycopg.connect(dsn) as con:
                 self.assertEqual(fingerprints(con,True,V2_TABLES),before)
-                self.assertEqual(con.execute('select max(version) from ksu.schema_version').fetchone()[0],3)
+                self.assertEqual(con.execute('select max(version) from ksu.schema_version').fetchone()[0],4)
                 self.assertEqual(con.execute('select count(*) from ksu.operation_receipts').fetchone()[0],0)
             app=create_app(pg.database_dsn(self.runtime,name),test_api.ORIGIN,False)
             with TestClient(app,headers={'Origin':test_api.ORIGIN}) as client:

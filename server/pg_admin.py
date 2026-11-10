@@ -19,13 +19,13 @@ from .decision_version_schema import TABLES as VERSION_TABLES,schema as version_
 from .offline_schema import TABLES as OFFLINE_TABLES,KEYS as OFFLINE_KEYS,schema as offline_schema
 V2_TABLES=LEGACY_TABLES+VERSION_TABLES
 TABLES=V2_TABLES+OFFLINE_TABLES
-SCHEMA_VERSION=3
+SCHEMA_VERSION=4
 KEYS={'users':'id','user_sites':'user_id,site_id','records':'collection,id','audit':'seq','mutations':'user_id,id','media':'id','imports':'hash','decision_records':'id','decision_documents':'id','decision_versions':'id','decision_entries':'record_id','decision_retirements':'record_id'}
 KEYS.update(OFFLINE_KEYS)
 
 
 def tables_for_version(version):
-    return {1:LEGACY_TABLES,2:V2_TABLES,3:TABLES}[version]
+    return {1:LEGACY_TABLES,2:V2_TABLES,3:TABLES,4:TABLES}[version]
 
 
 def canonical(row):
@@ -62,7 +62,7 @@ def grant_runtime(connection,role):
     connection.execute(sql.SQL('GRANT INSERT ON ksu.decision_documents,ksu.decision_versions,ksu.decision_entries,ksu.decision_retirements TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT ON ksu.checklist_versions,ksu.operation_receipts,ksu.media_keys,ksu.offline_packages TO {}').format(ident))
     connection.execute(sql.SQL('GRANT INSERT,UPDATE,DELETE ON ksu.sessions,ksu.attempts TO {}').format(ident))
-    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)'):
+    for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)','viewer_records()'):
         connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
 
 
@@ -82,8 +82,12 @@ def upgrade_schema(connection):
     version=connection.execute('select max(version) from ksu.schema_version').fetchone()[0]
     if version==1:
         connection.execute(version_schema(True));version=2
-    if version==2:connection.execute(offline_schema(True))
-    elif version!=SCHEMA_VERSION:raise ValueError('Unsupported schema version')
+    if version==2:
+        connection.execute(offline_schema(True));version=3
+    if version==3:
+        from .viewer_schema import postgres
+        connection.execute(postgres());version=4
+    if version!=SCHEMA_VERSION:raise ValueError('Unsupported schema version')
 
 
 def upgrade(dsn,role,backup_role=None):
@@ -128,6 +132,8 @@ def migrate_sqlite(source,dsn,standalone=False):
         else:
             snapshot_database(source,snapshot)
         if snapshot.stat().st_size>int(os.getenv('KSU_DB_MAX_BYTES','268435456')):raise ValueError('Source exceeds the established SQLite cap')
+        from .viewer_schema import upgrade_users_copy
+        upgrade_users_copy(snapshot)
         Database(snapshot)  # Upgrade only the private copy, never the source pilot.
         with closing(sqlite3.connect(snapshot)) as old,psycopg.connect(dsn) as target:
             known=set(TABLES)|{'sessions','attempts','sqlite_sequence'}
