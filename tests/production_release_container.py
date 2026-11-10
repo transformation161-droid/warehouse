@@ -50,14 +50,22 @@ def run(image,expected_sha):
         def stop():
             docker('stop',name,stdout=subprocess.DEVNULL);docker('rm',name,stdout=subprocess.DEVNULL)
         def health(client,healthy):
-            for _ in range(600):
+            latest=None;deadline=time.monotonic()+90
+            while time.monotonic()<deadline:
                 try:
-                    response=client.get('/api/health')
+                    response=client.get('/api/health',timeout=5)
                     if response.status_code==200:
-                        value=response.json();state=value.get('localBackup',{})
+                        value=response.json();latest=value;state=value.get('localBackup',{})
                         if state.get('healthy')==healthy and state.get('lastAttempt')==('success' if healthy else 'failed'):return value
                 except httpx.TransportError:pass
+                running=docker('inspect','--format','{{.State.Running}}',name,capture_output=True,text=True).stdout.strip()
+                if running!='true':break
                 time.sleep(.1)
+            # This harness creates only synthetic data; keep actionable diagnostics.
+            print(json.dumps({'last_health':latest,'expected_backup_healthy':healthy}),flush=True)
+            docker('logs','--tail','40',name,check=False)
+            state_file=data/'backup-v4/status.json'
+            if state_file.exists():print(state_file.read_text(),flush=True)
             raise AssertionError('Operational health did not reach expected backup state')
         try:
             start()
