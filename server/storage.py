@@ -29,6 +29,11 @@ def check_storage(database, reserve=8*1024*1024):
     limit=int(os.getenv('KSU_DATA_MAX_BYTES','0'))
     if not limit:return
     directory=Path(database).parent
+    volume=os.getenv('KSU_BACKUP_VOLUME_ROOT')
+    if volume:
+        root=Path(volume).resolve(strict=True)
+        if not Path(database).resolve().is_relative_to(root):raise StorageFull('Database outside configured data volume')
+        directory=root
     if directory_bytes(directory)+reserve > limit:
         raise StorageFull('Лимит данных пилота достигнут. Нужна выгрузка копии и проверка объёма администратором.')
     if shutil.disk_usage(directory).free < 256*1024*1024:

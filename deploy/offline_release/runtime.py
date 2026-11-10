@@ -41,9 +41,18 @@ def main():
     cert=os.environ.get('KSU_RELEASE_TLS_CERT');key=os.environ.get('KSU_RELEASE_TLS_KEY')
     if bool(cert)!=bool(key):raise SystemExit('TLS certificate/key must be provided together')
     from server.app import create_app
+    from server.local_backup import LocalBackups
     import uvicorn
-    try:uvicorn.run(create_app(),host='0.0.0.0',port=8000,ssl_certfile=cert,ssl_keyfile=key,proxy_headers=False,access_log=False)
-    finally:os.close(descriptor)
+    local=None
+    try:
+        app=create_app()
+        local=LocalBackups.environment(app.state.db,Path('/data'),app.state.backup_gate)
+        app.state.local_backups=local
+        if local:local.start()
+        uvicorn.run(app,host='0.0.0.0',port=8000,ssl_certfile=cert,ssl_keyfile=key,proxy_headers=False,access_log=False)
+    finally:
+        if local:local.close()
+        os.close(descriptor)
 
 
 if __name__=='__main__':main()

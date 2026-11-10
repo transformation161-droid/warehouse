@@ -1,38 +1,10 @@
-name: Encrypted Amvera pilot backup
+name: Corporate backup in GitHub disabled
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '15 3 * * *'
 permissions:
   contents: read
 jobs:
-  backup:
-    # Off by default: enable only after authorization, pricing/allowance checks and public acceptance.
-    if: vars.KSU_BACKUP_ENABLED == 'true'
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python -m pip install -r requirements-dev.txt
-      - name: Download, validate and encrypt
-        env:
-          KSU_PILOT_ORIGIN: ${{ vars.KSU_PILOT_ORIGIN }}
-          KSU_PILOT_MANAGER_PASSWORD: ${{ secrets.KSU_PILOT_MANAGER_PASSWORD }}
-          KSU_BACKUP_PUBLIC_CERT: ${{ secrets.KSU_BACKUP_PUBLIC_CERT }}
-        run: |
-          umask 077
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          Path('/tmp/ksu-backup-public.pem').write_text(os.environ['KSU_BACKUP_PUBLIC_CERT'])
-          PY
-          python -m deploy.amvera.independent_backup --recipient /tmp/ksu-backup-public.pem --output /tmp/ksu-backup.cms
-      - uses: actions/upload-artifact@v4
-        with:
-          name: encrypted-ksu-backup-${{ github.run_id }}
-          path: /tmp/ksu-backup.cms
-          retention-days: 7
-          if-no-files-found: error
+      - run: echo 'Corporate backups, passwords and certificates must not enter GitHub. No download or upload is performed.'

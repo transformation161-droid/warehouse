@@ -1,41 +1,10 @@
-name: Release tested KSU commit to approved Amvera project
+name: Amvera delivery disabled for production candidate
 on:
-  workflow_run:
-    workflows: ['KSU server tests']
-    branches: [main]
-    types: [completed]
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: amvera-pilot-release
-  cancel-in-progress: false
 jobs:
-  release:
-    if: >-
-      vars.KSU_AMVERA_RELEASE_ENABLED == 'true' &&
-      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
-    environment: amvera-pilot
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Reject stale commits
-        run: |
-          git fetch origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
-      - name: Deliver to existing project (no creation, scaling or payment)
-        env:
-          KSU_AMVERA_RELEASE_ENABLED: ${{ vars.KSU_AMVERA_RELEASE_ENABLED }}
-          AMVERA_GIT_URL: ${{ vars.AMVERA_GIT_URL }}
-          AMVERA_GIT_BRANCH: ${{ vars.AMVERA_GIT_BRANCH }}
-          AMVERA_GIT_LOGIN: ${{ secrets.AMVERA_GIT_LOGIN }}
-          AMVERA_GIT_PASSWORD: ${{ secrets.AMVERA_GIT_PASSWORD }}
-        run: python -m deploy.amvera.release
+      - run: echo 'Delivery is disabled. Use the approved owner-local rollout; no credentials, push or deploy here.'
