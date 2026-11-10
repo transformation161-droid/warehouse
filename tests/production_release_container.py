@@ -54,6 +54,7 @@ def run(image,expected_sha):
             while time.monotonic()<deadline:
                 try:
                     response=client.get('/api/health',timeout=5)
+                    latest={'http_status':response.status_code}
                     if response.status_code==200:
                         value=response.json();latest=value;state=value.get('localBackup',{})
                         if state.get('healthy')==healthy and state.get('lastAttempt')==('success' if healthy else 'failed'):return value
@@ -79,6 +80,9 @@ def run(image,expected_sha):
                 client.headers['X-CSRF-Token']=login.json()['csrf']
                 state=client.get('/api/state');assert state.status_code==200 and [s['id'] for s in state.json()['sites']]==['s1']
                 assert client.post('/api/admin/backup').status_code==403
+                # Health is public operational monitoring, but viewer's route allowlist
+                # deliberately forbids it while authenticated. Preserve that ACL.
+                client.cookies.clear();client.headers.pop('X-CSRF-Token')
                 stop()
                 # Two further verified runs in the actual image, with no network or app.
                 script="from server.local_backup import LocalBackups; from pathlib import Path; j=LocalBackups('/data/ksu.sqlite3','/data','/data/backup-v4'); j.run_once(); j.run_once(); assert len(j.owned())==2; print('Two verified copies retained')"
