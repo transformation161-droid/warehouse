@@ -15,7 +15,7 @@
   const safe=(v)=>esc(v??'');
   const amount=(n)=>rub(n);
   const hasCount=(x)=>x.actual!==null&&x.actual!==undefined;
-  const countLines=(id)=>db.inventoryLines.filter(x=>x.inventoryId===id);
+  const countLines=(id)=>db.inventoryLines.filter(x=>x.inventoryId===id).sort((a,b)=>(a.sourceRow||0)-(b.sourceRow||0)||String(a.id).localeCompare(String(b.id)));
   const sizeWarning=()=>toast('Сначала завершите предыдущую отправку',true);
   const sourceData=async(file)=>{
     if(file.size>3000000)throw Error('Максимальный размер файла 3 МБ');
