@@ -57,7 +57,13 @@ def summarize_inventory(lines):
         statement.append({
             "no": i,
             "item": str(original.get("item", "")).strip(),
-            "sku": str(original.get("sku", original.get("inventoryNumber", ""))).strip(),
+            "sku": (
+                (str(original.get("inventoryNumber") or original.get("sku") or "").strip() +
+                 (" / ID " + str(original["sourceId"]).strip()
+                  if original.get("sourceId") and str(original["sourceId"]).strip() !=
+                     str(original.get("inventoryNumber") or original.get("sku") or "").strip()
+                  else ""))
+            ),
             "unit": str(original.get("unit") or "шт."),
             "expected": planned,
             "actual": actual,
