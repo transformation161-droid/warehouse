@@ -121,6 +121,13 @@ document.addEventListener('click',e=>{
   if(a==='save-inv-line'){saveInvLine(id);return}
   if(a==='toggle-inv-status'){setInventoryStatus(id);return}
   if(a==='export-inventory'){inventoryCSV(id);return}
+  if(a==='export-inventory-pdf'||a==='export-inventory-xlsx'){
+    const extension=a.endsWith('pdf')?'pdf':'xlsx';
+    const link=document.createElement('a');
+    link.href='/api/inventories/'+encodeURIComponent(id)+'/statement.'+extension;
+    link.download='ksu-inventory-statement.'+extension;
+    document.body.append(link);link.click();link.remove();return
+  }
   if(a==='csv-template'){csvTemplate();return}
   if(a==='import-csv'){importCSVModal();return}
   if(a==='process-csv'){processCSV();return}
@@ -154,7 +161,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.modal)closeModal()});
 // Ensure status and detail changes are available on both inspection and inventory views.
 const previousInventoryDetail=inventoryDetail;
-inventoryDetail=function(id){previousInventoryDetail(id);const inv=db.inventories.find(x=>x.id===id);if(!inv)return;ui.modal.footer=`<button class="btn secondary" data-action="toggle-inv-status" data-id="${id}">${inv.status==='final'?'Вернуть в работу':'Завершить'}</button><button class="btn secondary" data-action="add-inv-line" data-id="${id}">${icon('plus')} Позиция</button><button class="btn secondary" data-action="export-inventory" data-id="${id}">${icon('download')} CSV</button><button class="btn primary" data-action="close-modal">Закрыть</button>`;renderModal()};
+inventoryDetail=function(id){previousInventoryDetail(id);const inv=db.inventories.find(x=>x.id===id);if(!inv)return;ui.modal.footer=`<button class="btn secondary" data-action="toggle-inv-status" data-id="${id}">${inv.status==='final'?'Вернуть в работу':'Завершить'}</button><button class="btn secondary" data-action="add-inv-line" data-id="${id}">${icon('plus')} Позиция</button><button class="btn secondary" data-action="export-inventory" data-id="${id}">${icon('download')} CSV</button><button class="btn secondary" data-action="export-inventory-xlsx" data-id="${id}">${icon('download')} XLSX</button><button class="btn secondary" data-action="export-inventory-pdf" data-id="${id}">${icon('print')} PDF</button><button class="btn primary" data-action="close-modal">Закрыть</button>`;renderModal()};
 function renderInspectorHome(){const active=db.findings.filter(x=>x.status!=='closed').sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))).slice(0,8);const recent=db.inspections.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);return `${heading('Рабочий день · КСУ','Выезды, текущие замечания и контроль устранения',`<button class="btn primary" data-action="start-audit">${icon('plus')} Начать проверку</button>`)}<div class="onboarding"><div><h3>Рабочее место инспектора</h3><p>Выберите объект, проведите чек-лист и зафиксируйте нарушения. После сохранения замечания появятся в общем реестре.</p></div><button class="btn" data-nav="schedule">План выездов ${icon('arrow')}</button></div><div class="grid grid-3">${metric('Открытые замечания',findSummary().open,'По всем объектам','alert')}${metric('Просрочено',findSummary().late,'Контроль сроков','clock')}${metric('Проверок выполнено',db.inspections.length,'В базе','clipboard')}</div><div class="grid grid-2 section-gap"><section class="card"><div class="card-title-row"><div class="card-title">Приоритетные замечания</div><button class="link" data-nav="findings">Все замечания</button></div>${active.map(f=>`<div class="object-row"><div style="flex:1"><button class="link small" data-action="finding-detail" data-id="${f.id}">${esc(f.title)}</button><div class="tiny muted">${esc(nameSite(f.siteId))} · срок ${fmtDate(f.dueDate)}</div></div>${pill(statuses[f.status],statusColor[f.status])}</div>`).join('')||empty()}</section><section class="card"><div class="card-title-row"><div class="card-title">Последние выезды</div><button class="link" data-nav="audits">Журнал</button></div>${recent.map(a=>`<div class="object-row"><span class="object-icon">${icon('clipboard')}</span><div style="flex:1"><button class="link" data-action="audit-detail" data-id="${a.id}">${esc(nameSite(a.siteId))}</button><div class="tiny muted">${fmtDate(a.date)}</div></div>${pill((inspectionScore(a)??'—')+'%','blue')}</div>`).join('')||empty()}</section></div>`}
 const baseRenderOverview=renderOverview;
 renderOverview=function(){return ui.role==='inspector'?renderInspectorHome():baseRenderOverview()};
