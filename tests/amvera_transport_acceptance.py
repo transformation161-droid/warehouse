@@ -32,7 +32,7 @@ def run(image,sha):
         root=env['root'];out=root/'output';out.mkdir();config=root/'private-config.json';config.write_text(json.dumps(approved()))
         proxy='ksu-ingress-'+uuid4().hex[:10];app='ksu-amvera-app-'+uuid4().hex[:10];port=unused_port();origin=f'https://127.0.0.1:{port}'
         mounts=['--user',f'{os.getuid()}:{os.getgid()}','--read-only','--cpus','0.5','--memory','1g','--memory-swap','1g',
-            '--tmpfs','/tmp:rw,nosuid,nodev,size=128m','--cap-drop','ALL','--security-opt','no-new-privileges','-v',str(env['pki'])+':/tls:ro']
+            '--tmpfs','/tmp:rw,nosuid,nodev,size=768m','--cap-drop','ALL','--security-opt','no-new-privileges','-v',str(env['pki'])+':/tls:ro']
         def settings(kind,selected,role):
             values=conninfo_to_dict(env[kind]['container_'+role])
             if selected=='amvera-external':values.update(host=HOST,sslmode='require');values.pop('sslrootcert',None)
@@ -61,7 +61,9 @@ def run(image,sha):
                         if r.status_code==200:assert r.json()['build']==sha and r.json()['backend']=='postgresql';return
                     except httpx.TransportError:pass
                     time.sleep(.1)
-            raise AssertionError('Synthetic runtime failed to start')
+            log=docker('logs','--tail','10',app,check=False,capture_output=True,text=True)
+            reason=re.search(r'preflight refused: ([A-Za-z]+)\.',log.stdout+log.stderr)
+            raise AssertionError('Synthetic runtime failed: '+(reason[1] if reason else 'unknown private diagnostic'))
         def stop():docker('rm','-f',app,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
             docker('run','-d','--pull','never','--name',proxy,'--network',env['network'],'--network-alias',HOST,*mounts,
