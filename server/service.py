@@ -103,7 +103,7 @@ def save_record(con, actor, collection, ident, payload, expected_version):
             fail('Завершённые и отменённые выезды неизменяемы',403)
     if (old['version'] if old else 0) != expected_version:
         fail('Запись изменена другим пользователем. Обновите данные и сравните изменения.',409)
-    if old and actor['role']=='inspector' and collection not in ('visits','inspections') and old['author_id']!=actor['id']:
+    if old and actor['role']=='inspector' and collection not in ('visits','inspections','inventoryLines') and old['author_id']!=actor['id']:
         fail('Можно изменять только собственные записи',403)
     if old and collection=='inspections':
         fail('Завершённый акт неизменяем',403)
@@ -127,10 +127,28 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         site = parent['site_id']
         if old and before['inventoryId']!=data['inventoryId']:
             fail('Перенос строки запрещён',403)
-        if actor['role']!='manager' and parent['author_id']!=actor['id']:
-            fail('Можно изменять только собственную инвентаризацию',403)
-        if json.loads(parent['data'])['stage']!='primary':
-            fail('После проверки расхождений строки пересчёта неизменяемы',409)
+        parent_data=json.loads(parent['data'])
+        if parent_data['stage']!='primary' or parent_data.get('status')=='final':
+            fail('После завершения инвентаризации строки пересчёта неизменяемы',409)
+        if actor['role']=='inspector':
+            if parent['author_id']!=actor['id'] and (not old or not parent_data.get('sourceHash')):
+                fail('Можно изменять только собственную инвентаризацию либо факт по доступному плану',403)
+            if old and parent_data.get('sourceHash'):
+                # Once a plan is imported, an inspector cannot alter its identity,
+                # expected amount, procurement price, object or other master data.
+                from .models import InventoryLine
+                before_data=InventoryLine.model_validate(before).model_dump(mode='json')
+                allowed={'actual','reason','photo','countedBy','countedAt'}
+                if any(data[key]!=before_data[key] for key in data if key not in allowed):
+                    fail('Исполнитель может изменять только факт, примечание и фото',403)
+        if old:
+            changed=any(data.get(field)!=before.get(field) for field in ('actual','reason','photo'))
+            if changed:
+                data['countedBy']=actor['id'] if data.get('actual') is not None else ''
+                data['countedAt']=now() if data.get('actual') is not None else ''
+            if data.get('actual') is None and (data.get('reason') or data.get('photo')):
+                fail('Сначала укажите результат пересчёта')
+        if data.get('photo'):validate_photo(con,actor,site,data['photo'])
     if site:
         if not get_record(con,'sites',site):
             fail('Объект не найден')
@@ -179,6 +197,18 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         for field in ('photo','evidence'):
             validate_photo(con, actor, site, data[field])
     if collection=='inventories':
+        if before and before.get('status')=='final':
+            if data['status']!='final' or any(data[k]!=before.get(k) for k in ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
+                fail('Завершённую инвентаризацию нельзя вернуть в черновик или изменить',409)
+        if data['status']=='final' and (not before or before.get('status')!='final'):
+            if data['stage']!='primary':
+                fail('Инвентаризацию завершают до управленческого подтверждения расхождений')
+            lines=[json.loads(r['data']) for r in con.execute(
+                "select data from records where collection='inventoryLines' and site_id=?",
+                (site,)) if json.loads(r['data']).get('inventoryId')==ident]
+            if not lines or len(lines)!=data['plannedPositions'] or any(
+                line.get('actual') is None for line in lines):
+                fail('Нельзя завершить инвентаризацию: есть непроверенные позиции',409)
         start=before['stage'] if before else 'primary'
         transitions={'primary':{'confirmed','corrected'}, 'confirmed':{'investigation','corrected'},
                      'investigation':{'approved','corrected'}, 'approved':{'recovered'}, 'corrected':set(), 'recovered':set()}
