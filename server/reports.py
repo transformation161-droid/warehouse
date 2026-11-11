@@ -58,6 +58,8 @@ def build_report(state, params):
             if not inv: continue
             key=sites[inv['siteId']] if group=='site' else inv['date'][:7] if group=='period' else line.get({'category':'category','owner':'owner','item':'item'}[group]) or 'Не задано'
             b=bucket(key,fields); b['positions']+=1
+            # A planned item without a physical count is neither missing nor surplus.
+            if line.get('actual') is None:continue
             shortage=money(max(Decimal(str(line['expected']))-Decimal(str(line['actual'])),Decimal(0)),line['price'])
             surplus=money(max(Decimal(str(line['actual']))-Decimal(str(line['expected'])),Decimal(0)),line['price'])
             b['shortage']+=shortage; b['surplus']+=surplus
