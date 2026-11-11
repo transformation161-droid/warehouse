@@ -41,6 +41,13 @@ BEGIN
   ) THEN
    RAISE EXCEPTION 'forbidden' USING ERRCODE='23514';
   END IF;
+  IF TG_OP='UPDATE' AND EXISTS(
+     SELECT 1 FROM records p WHERE p.collection='inventories'
+     AND p.id=n->>'inventoryId' AND coalesce(p.data::jsonb->>'sourceHash','')<>''
+   ) AND (n - ARRAY['actual','reason','photo','countedBy','countedAt']) IS DISTINCT FROM
+         (o - ARRAY['actual','reason','photo','countedBy','countedAt']) THEN
+    RAISE EXCEPTION 'forbidden' USING ERRCODE='23514';
+  END IF;
   IF TG_OP='UPDATE' AND role='inspector' AND
    (OLD.author_id<>actor_id() OR EXISTS(
       SELECT 1 FROM records p WHERE p.collection='inventories'
@@ -62,6 +69,12 @@ BEGIN
   END IF;
  END IF;
  IF NEW.collection='inventories' AND TG_OP='UPDATE' THEN
+  IF coalesce(o->>'sourceHash','')<>'' AND
+    (n->>'siteId',n->>'date',n->>'title',n->>'plannedPositions',n->>'sourceHash',n->>'sourceName')
+    IS DISTINCT FROM
+    (o->>'siteId',o->>'date',o->>'title',o->>'plannedPositions',o->>'sourceHash',o->>'sourceName') THEN
+    RAISE EXCEPTION 'forbidden' USING ERRCODE='23514';
+  END IF;
   IF o->>'status'='final' AND n->>'status'<>'final' THEN
    RAISE EXCEPTION 'forbidden' USING ERRCODE='23514'; END IF;
   IF n->>'status'='final' AND o->>'status'<>'final' THEN
