@@ -73,11 +73,14 @@ def _recognition(headers):
 def _detect_header(rows):
     choice = None
     for index, row in enumerate(rows[:30]):
+        # Identify a plausible *header* before checking uniqueness. A data row
+        # may legitimately contain the same ID in two separate columns.
+        names = {_clean(value).casefold() for value in row if _clean(value)}
+        recognized = {LOOKUP[name] for name in names if name in LOOKUP}
+        if "item" not in recognized or not (recognized & {"externalId", "inventoryNumber", "expected", "price"}):
+            continue
         headers = _headers(row)
         matching = _recognition(headers)
-        # A general title row must not be mistaken for a data header.
-        if "item" not in matching or not (set(matching) & {"externalId", "inventoryNumber", "expected", "price"}):
-            continue
         rank = (len(matching), -index)
         if choice is None or rank > choice[0]:
             choice = (rank, index)
