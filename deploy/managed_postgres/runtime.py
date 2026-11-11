@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 
 def configure():
-    from server.managed_pg import binding,tls
+    from server.managed_pg import binding,transport
     from server.offline_release import Policy
     if 'KSU_OFFLINE_MODE' not in os.environ:raise ValueError('Explicit release policy required')
     Policy.environment()
@@ -17,7 +17,7 @@ def configure():
     if os.getenv('KSU_DB') or os.getenv('KSU_LOCAL_BACKUP_MODE','off')!='off':raise ValueError('SQLite settings forbidden in managed production')
     for key in ('KSU_PG_ADMIN_DSN','KSU_PG_BOOTSTRAP_DSN','KSU_PG_BACKUP_DSN','KSU_PG_RUNTIME_PASSWORD','KSU_PG_BACKUP_PASSWORD'):
         if os.getenv(key) or os.getenv(key+'_FILE'):raise ValueError('Administrator/backup credentials must stay outside application')
-    dsn=binding('KSU_DATABASE_URL');info=tls(dsn)
+    dsn=binding('KSU_DATABASE_URL');info=transport(dsn)
     if info['user']!='ksu_runtime':raise ValueError('Dedicated runtime role required')
     build=Path('/app/RELEASE_SHA').read_text().strip()
     if not re.fullmatch('[a-f0-9]{40}',build):raise ValueError('Pinned build identity required')

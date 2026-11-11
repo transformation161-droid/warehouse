@@ -1,11 +1,11 @@
 # Owner-local operations only; private env/CA/source files must never be in a Git checkout.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('bootstrap','template','init-schema','init-production','migrate','verify','preflight','backup','restore')][string]$Operation,
+    [Parameter(Mandatory=$true)][ValidateSet('bootstrap','template','probe','init-schema','init-production','migrate','verify','preflight','backup','restore')][string]$Operation,
     [Parameter(Mandatory=$true)][string]$EnvFile,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [string]$Source='',
-    [ValidateSet('runtime','admin','backup')][string]$Role='runtime',
+    [ValidateSet('runtime','admin','backup','bootstrap')][string]$Role='runtime',
     [string]$Image='ksu-managed:rc'
 )
 $ErrorActionPreference='Stop'
@@ -51,6 +51,7 @@ switch ($Operation) {
     init-production { $operationArgs+=@('--source','/input/source','--output','/work/result/production') }
     migrate { $operationArgs+=@('--source','/input/source','--output','/work/result/migration.json') }
     verify { $operationArgs+=@('--report','/input/source') }
+    probe { $operationArgs+=@('--role',$Role) }
     preflight { $operationArgs+=@('--role',$Role) }
     backup { $operationArgs+=@('--output','/work/result/backup.ksubackup') }
     restore { $operationArgs+=@('--source','/input/source','--output','/work/result/restore.json') }

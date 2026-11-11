@@ -39,8 +39,8 @@ Invoke-Docker run --rm --pull never --network none --user 0:0 --mount "type=volu
 $super=New-Secret;$passwords=@{ksu_admin=(New-Secret);ksu_runtime=(New-Secret);ksu_backup=(New-Secret)}
 $serverEnv=Join-Path $target 'local-server.env';$bootstrapEnv=Join-Path $target 'local-bootstrap.env';$adminEnv=Join-Path $target 'local-admin.env'
 Write-PrivateText $serverEnv "POSTGRES_PASSWORD=$super`nPOSTGRES_DB=ksu_restore`n"
-Write-PrivateText $bootstrapEnv "KSU_PG_BOOTSTRAP_DSN=host=localhost port=5432 dbname=ksu_restore user=postgres password=$super sslmode=verify-full sslrootcert=/config/cert.pem`n"
-Write-PrivateText $adminEnv "KSU_PG_ADMIN_DSN=host=localhost port=5432 dbname=ksu_restore user=ksu_admin password=$($passwords.ksu_admin) sslmode=verify-full sslrootcert=/config/cert.pem`n"
+Write-PrivateText $bootstrapEnv "KSU_PG_TRANSPORT_PROFILE=verify-full`nKSU_PG_BOOTSTRAP_DSN=host=localhost port=5432 dbname=ksu_restore user=postgres password=$super sslmode=verify-full sslrootcert=/config/cert.pem`n"
+Write-PrivateText $adminEnv "KSU_PG_TRANSPORT_PROFILE=verify-full`nKSU_PG_ADMIN_DSN=host=localhost port=5432 dbname=ksu_restore user=ksu_admin password=$($passwords.ksu_admin) sslmode=verify-full sslrootcert=/config/cert.pem`n"
 Invoke-Docker run -d --pull never --name $name --cpus 0.5 --memory 1g --memory-swap 1g --env-file $serverEnv `
     --mount "type=volume,src=$data,dst=/var/lib/postgresql/data" --mount "type=volume,src=$pki,dst=/private-tls,readonly" $pg `
     bash -c 'cp /private-tls/* /tmp/ && chown postgres:postgres /tmp/key.pem /tmp/cert.pem && chmod 600 /tmp/key.pem && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/cert.pem -c ssl_key_file=/tmp/key.pem' | Out-Null

@@ -15,7 +15,8 @@ from psycopg import sql
 from psycopg.rows import dict_row,tuple_row
 from .backup_job import atomic_json
 from .database import password_hash,now
-from .managed_pg import tls,preflight
+from .managed_pg import transport,preflight
+from .pg_transport import connect
 from .models import Site,Question
 from .pg_admin import TABLES,fingerprints
 from .postgres_backend import Connection
@@ -84,9 +85,9 @@ def output_directory(value):
 
 
 def initialize(dsn,values,output):
-    config=configuration(values);tls(dsn);preflight(dsn,'admin');target=output_directory(output)
+    config=configuration(values);transport(dsn);preflight(dsn,'admin');target=output_directory(output)
     credentials={role:{'id':uuid4().hex,**account,'password':secrets.token_urlsafe(24)} for role,account in config['accounts'].items()}
-    with psycopg.connect(dsn,connect_timeout=10) as raw:
+    with connect(dsn,connect_timeout=10) as raw:
         raw.execute('select pg_advisory_xact_lock(170009)')
         tables=TABLES+('sessions','attempts')
         raw.execute(sql.SQL('lock table {} in exclusive mode').format(sql.SQL(',').join(sql.Identifier('ksu',t) for t in tables)))
