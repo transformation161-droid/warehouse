@@ -2,6 +2,7 @@
 'use strict';
 (()=>{
   let upload=null,preview=null,countBusy=false,activeInventory=null;
+  let inventoryFilter={id:null,status:'all',query:'',page:1};
   const pageSize=100;
   const mapFields=[['item','Наименование'],['externalId','ID'],['inventoryNumber','Инвентарный №'],
     ['price','Цена закупки'],['expected','Учётное количество'],['brand','Бренд'],
@@ -104,15 +105,18 @@
   function planScreen(id){
     const inv=db.inventories.find(x=>x.id===id);if(!inv)return;
     activeInventory=id;
+    if(inventoryFilter.id!==id)inventoryFilter={id,status:'all',query:'',page:1};
     const rows=countLines(id);
     const t=totals(rows),completed=rows.length>0&&rows.length===inv.plannedPositions&&t.unchecked===0;
     const mayCount=allowed()&&inv.status!=='final'&&inv.stage==='primary';
     const mayFinalize=mayCount&&(sessionUser.role==='manager'||inv.createdBy===sessionUser.id);
-    const filterState=field('ip-filter-status')||'all',query=field('ip-filter-name').toLowerCase();
+    const filterState=inventoryFilter.status,query=inventoryFilter.query;
     const filtered=rows.filter(x=>(filterState==='all'||(filterState==='unchecked'?!hasCount(x):
       filterState==='differences'?hasCount(x)&&Number(x.actual)!==Number(x.expected):hasCount(x)))&&
       (!query||[x.item,x.sku,x.inventoryNumber,x.sourceId].some(v=>String(v||'').toLowerCase().includes(query))));
-    const slice=filtered.slice(0,pageSize);
+    const pages=Math.max(1,Math.ceil(filtered.length/pageSize));
+    inventoryFilter.page=Math.min(Math.max(1,inventoryFilter.page),pages);
+    const slice=filtered.slice((inventoryFilter.page-1)*pageSize,inventoryFilter.page*pageSize);
     const tr=slice.map(x=>{
       const status=!hasCount(x)?'Не проверено':x.actual<x.expected?'Недостача':
          x.actual>x.expected?'Излишек':'Соответствует';
@@ -142,7 +146,11 @@
       '<div class="table-wrap"><table class="table"><thead><tr><th>Инв. № / ID</th><th>Наименование</th>'+
       '<th>Учёт</th><th>Факт</th><th>Закупочная цена</th><th>Статус</th><th></th></tr></thead><tbody>'+
       tr+'</tbody></table></div><div class="tiny muted">Показано '+slice.length+' из '+filtered.length+
-      ' позиций. Для других позиций используйте поиск или фильтр.</div>';
+      ' позиций. Страница '+inventoryFilter.page+' из '+pages+'.</div>'+
+      (pages>1?'<div class="actions-row section-gap"><button class="btn secondary" data-action="ip-prev-page" '+
+        (inventoryFilter.page===1?'disabled':'')+'>Предыдущие 100</button>'+
+        '<button class="btn secondary" data-action="ip-next-page" '+
+        (inventoryFilter.page===pages?'disabled':'')+'>Следующие 100</button></div>':'');
     const footer='<button class="btn secondary" data-action="history" data-collection="inventories" data-id="'+attr(id)+'">История</button>'+
       (sessionUser.role==='manager'&&(typeof stageNext!=='undefined')&&
         (stageNext[inv.stage||'primary']||[]).length?
@@ -244,15 +252,15 @@
     if(mode==='ip-save-count')void saveCount(id);
     if(mode==='ip-finalize')void finalize(id);
     if(mode==='ip-filter-apply'&&activeInventory){
-      // Search the current page using user-controlled filters, not an implicit data reset.
-      const name=field('ip-filter-name'),status=field('ip-filter-status');
-      const inv=db.inventories.find(x=>x.id===activeInventory);
-      if(inv){const prior=planScreen; // small state restoration around modal redraw
-        activeInventory=inv.id;
-        planScreen(inv.id);
-        const nameInput=get('ip-filter-name'),statusInput=get('ip-filter-status');
-        if(nameInput)nameInput.value=name;if(statusInput)statusInput.value=status;
-      }
+      inventoryFilter={id:activeInventory,query:field('ip-filter-name').trim().toLowerCase(),
+        status:field('ip-filter-status')||'all',page:1};
+      planScreen(activeInventory);
+    }
+    if(mode==='ip-prev-page'&&activeInventory&&inventoryFilter.page>1){
+      inventoryFilter.page--;planScreen(activeInventory);
+    }
+    if(mode==='ip-next-page'&&activeInventory){
+      inventoryFilter.page++;planScreen(activeInventory);
     }
   });
 })();
