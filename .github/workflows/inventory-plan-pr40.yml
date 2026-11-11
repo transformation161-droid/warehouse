@@ -1,0 +1,35 @@
+name: Inventory plan PR40
+
+on:
+  pull_request:
+    branches:
+      - release/amvera-transport-profile
+    paths:
+      - server/inventory_plan.py
+      - server/inventory_statement.py
+      - server/app.py
+      - release_online/app.js
+      - tests/test_inventory_plan.py
+      - tests/test_inventory_statement.py
+      - .github/workflows/inventory-plan-pr40.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install "openpyxl>=3.1,<4" "reportlab>=4,<5" "pytest>=8,<10"
+      - name: Compile changed Python
+        run: python -m compileall -q server/inventory_plan.py server/inventory_statement.py tests/test_inventory_plan.py tests/test_inventory_statement.py
+      - name: Inventory reader and statement tests
+        run: python -m pytest -q tests/test_inventory_plan.py tests/test_inventory_statement.py
+      - name: Validate user interface script syntax
+        run: node --check release_online/app.js
