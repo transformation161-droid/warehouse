@@ -675,7 +675,7 @@ def create_app(path=None, origin=None, secure=None):
             if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js',('/inventory-count.js','inventory-count.js')),('/styles.css','styles.css')]:
+    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release
