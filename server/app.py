@@ -21,7 +21,7 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .database import Database, ROOT, digest, password_hash, password_valid, now, is_postgres
 from .imports import parse_import, commit_import
-from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview, DecisionVersionPreview, DecisionVersionConfirm
+from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview, DecisionVersionPreview, DecisionVersionConfirm, InventoryPlanUpload, InventoryCountUpdate, InventoryFinalize
 from .reports import build_report, export
 from .service import accessible, apply_changes, fail
 from .storage import StorageFull, check_storage
@@ -603,6 +603,24 @@ def create_app(path=None, origin=None, secure=None):
         except (ValueError,binascii.Error):fail('Неверные данные файла')
         try:return parse_plan(raw,payload.name,mapping=payload.mapping)
         except PlanError as error:fail(str(error))
+
+    @app.post('/api/inventory-plan/commit')
+    def import_inventory_plan(payload:InventoryPlanUpload,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import create_plan
+        return create_plan(db,actor,payload)
+
+    @app.patch('/api/inventory-lines/{ident}/count')
+    def save_inventory_fact(ident:str,payload:InventoryCountUpdate,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import count_line
+        return count_line(db,actor,ident,payload)
+
+    @app.post('/api/inventories/{ident}/finalize')
+    def finalize_inventory_plan(ident:str,payload:InventoryFinalize,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import finalize_inventory
+        return finalize_inventory(db,actor,ident,payload)
 
     @app.get('/api/inventories/{ident}/statement.{extension}')
     def inventory_statement(ident:str,extension:str,request:Request):
