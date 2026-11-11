@@ -192,7 +192,7 @@ def acceptance():
             plan={"name":"synthetic.xlsx","content":make_workbook("HTTP"),
                   "siteId":"site_alpha","date":"2026-11-13",
                   "title":"Тест HTTP"}
-            read=client.post("/api/inventory-plan/preview",json=plan,headers=headers)
+            read=client.post("/api/inventory-plan/preview",json={"name":plan["name"],"content":plan["content"]},headers=headers)
             assert read.status_code==200,(read.status_code,read.text)
             assert read.json()["positions"]==2
             put=client.post("/api/inventory-plan/commit",json=plan,headers=headers)
