@@ -69,6 +69,10 @@ BEGIN
   END IF;
  END IF;
  IF NEW.collection='inventories' AND TG_OP='UPDATE' THEN
+  IF coalesce(o->>'sourceHash','')<>'' AND o->>'status'<>'final'
+     AND n->>'stage' IS DISTINCT FROM o->>'stage' THEN
+    RAISE EXCEPTION 'forbidden' USING ERRCODE='23514';
+  END IF;
   IF coalesce(o->>'sourceHash','')<>'' AND
     (n->>'siteId',n->>'date',n->>'title',n->>'plannedPositions',n->>'sourceHash',n->>'sourceName')
     IS DISTINCT FROM
