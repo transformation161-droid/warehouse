@@ -49,7 +49,7 @@ def create_plan(db, actor, payload):
             "select id from records where collection='inventories' and site_id=? "
             "and json_extract(data,'$.sourceHash')=? and json_extract(data,'$.date')=? "
             "order by created_at limit 1",
-            (payload.siteId, source["sourceSha256"], import_date),
+            (payload.siteId, source["planSha256"], import_date),
         ).fetchone()
         if existing:
             return {"duplicate": True, "inventoryId": existing["id"],
@@ -61,7 +61,7 @@ def create_plan(db, actor, payload):
             "siteId": payload.siteId, "date": import_date,
             "title": payload.title, "status": "draft", "stage": "primary",
             "plannedPositions": source["positions"],
-            "sourceHash": source["sourceSha256"], "sourceName": payload.name,
+            "sourceHash": source["planSha256"], "sourceName": payload.name,
         })
         save_record(con, actor, "inventories", inventory_id,
                     inventory.model_dump(mode="json"), 0)
