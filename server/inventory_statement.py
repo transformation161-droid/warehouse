@@ -197,15 +197,16 @@ def export_inventory_pdf(inventory, summary):
         Spacer(1, 10),
     ]
     headings = ["№", "Наименование", "ID/№", "Учёт", "Факт", "Δ",
-                "Цена, ₽", "Недост., ₽", "Излиш., ₽"]
+                "Цена закупки", "План, ₽", "Факт, ₽", "Недост., ₽", "Излиш., ₽"]
     data = [[line(v) for v in headings]]
     for row in summary["rows"]:
         fmt = lambda number: "—" if number is None else f"{number:,.2f}".replace(",", " ")
         data.append([line(row["no"]), line(row["item"]), line(row["sku"]),
                      line(fmt(row["expected"])), line(fmt(row["actual"])),
                      line(fmt(row["difference"])), line(fmt(row["purchasePrice"])),
+                     line(fmt(row["planValue"])), line(fmt(row["knownFactValue"])),
                      line(fmt(row["shortageValue"])), line(fmt(row["surplusValue"]))])
-    table = Table(data, colWidths=[23, 210, 96, 44, 44, 44, 77, 100, 100], repeatRows=1, hAlign="LEFT")
+    table = Table(data, colWidths=[22, 170, 75, 39, 39, 38, 70, 70, 70, 75, 75], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F1F8")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
