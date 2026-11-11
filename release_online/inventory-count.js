@@ -143,7 +143,11 @@
       '<th>Учёт</th><th>Факт</th><th>Закупочная цена</th><th>Статус</th><th></th></tr></thead><tbody>'+
       tr+'</tbody></table></div><div class="tiny muted">Показано '+slice.length+' из '+filtered.length+
       ' позиций. Для других позиций используйте поиск или фильтр.</div>';
-    const footer='<button class="btn secondary" data-action="export-inventory-xlsx" data-id="'+attr(id)+'">XLSX</button>'+
+    const footer='<button class="btn secondary" data-action="history" data-collection="inventories" data-id="'+attr(id)+'">История</button>'+
+      (sessionUser.role==='manager'&&(typeof stageNext!=='undefined')&&
+        (stageNext[inv.stage||'primary']||[]).length?
+        '<button class="btn secondary" data-action="change-stage" data-id="'+attr(id)+'">Стадия расхождений</button>':'')+
+      '<button class="btn secondary" data-action="export-inventory-xlsx" data-id="'+attr(id)+'">XLSX</button>'+
       '<button class="btn secondary" data-action="export-inventory-pdf" data-id="'+attr(id)+'">PDF / печать</button>'+
       (mayFinalize?'<button class="btn primary" data-action="ip-finalize" data-id="'+attr(id)+'"'+
         (completed?'':' disabled')+'>Завершить ('+t.checked+'/'+rows.length+')</button>':'')+
