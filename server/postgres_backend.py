@@ -72,6 +72,9 @@ class PostgresDatabase:
             if self.viewer_read_capable:self.viewer_read_capable=con.execute('select viewer_read_version()').fetchone()[0]==2
             if con.execute("select has_table_privilege(current_user,'ksu.users','UPDATE')").fetchone()[0]:raise ValueError('Runtime cannot administer user roles')
             if con.execute('select coalesce(max(version),0) from schema_version').fetchone()[0]!=4:raise ValueError('PostgreSQL schema v4 required; run the offline upgrade before starting')
+            if os.getenv('KSU_INVENTORY_PLAN_ENABLED')=='on' and con.execute(
+                "select to_regprocedure('ksu.inventory_count_version()')").fetchone()[0] is None:
+                raise ValueError('Inventory plan RLS migration is required before activation')
             if con.execute("select count(*) from pg_class where relnamespace='ksu'::regnamespace and relname in ('checklist_versions','operation_receipts','media_keys','offline_packages') and relrowsecurity").fetchone()[0]!=4:raise ValueError('Offline RLS policies are required')
 
     @contextmanager

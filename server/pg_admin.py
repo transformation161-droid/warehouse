@@ -70,6 +70,11 @@ def grant_runtime(connection,role):
     connection.execute(sql.SQL('GRANT INSERT,UPDATE,DELETE ON ksu.sessions,ksu.attempts TO {}').format(ident))
     for function in ('actor_id()','actor_role()','accessible(text)','json_extract(text,text)','import_exists(text)','import_styles(text)','state_revision()','import_created_at(text)','viewer_records()','viewer_media_links()','viewer_media(text,boolean)','viewer_read_version()'):
         connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.'+function+' TO {}').format(ident))
+    # A restored PR40 database includes this feature marker in pg_dump. The
+    # restore path revokes PUBLIC function EXECUTE, then must restore the
+    # runtime-specific grant; older v4 backups may not contain the marker.
+    if connection.execute("select to_regprocedure('ksu.inventory_count_version()')").fetchone()[0] is not None:
+        connection.execute(sql.SQL('GRANT EXECUTE ON FUNCTION ksu.inventory_count_version() TO {}').format(ident))
 
 
 def grant_backup(connection,role):

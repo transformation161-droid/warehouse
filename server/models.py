@@ -69,6 +69,8 @@ class Inventory(Model):
     status: Literal['draft', 'final'] = 'draft'
     stage: Literal['primary', 'confirmed', 'corrected', 'investigation', 'approved', 'recovered'] = 'primary'
     decision: str = Field(default='', max_length=4000)
+    sourceHash: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?$')
+    sourceName: str = Field(default='', max_length=200)
 
 
 class InventoryLine(Model):
@@ -78,10 +80,17 @@ class InventoryLine(Model):
     category: str = Field(default='Прочее', max_length=120)
     unit: str = Field(default='шт.', max_length=30)
     expected: float = Field(ge=0, le=100000000)
-    actual: float = Field(ge=0, le=100000000)
+    actual: float | None = Field(default=None, ge=0, le=100000000)
     price: float = Field(ge=0, le=100000000)
     owner: str = Field(default='', max_length=120)
     reason: str = Field(default='', max_length=4000)
+    sourceId: str = Field(default='', max_length=120)
+    inventoryNumber: str = Field(default='', max_length=120)
+    brand: str = Field(default='', max_length=120)
+    sourceRow: int = Field(default=0, ge=0, le=100000)
+    photo: str = Field(default='', max_length=200)
+    countedBy: str = Field(default='', max_length=80)
+    countedAt: str = Field(default='', max_length=50)
 
 
 class Visit(Model):
@@ -124,6 +133,23 @@ class ImportFile(Model):
     name: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=4_100_000)
     mapping: dict[str, str] | None = None
+
+
+class InventoryPlanUpload(ImportFile):
+    siteId: str = Field(min_length=1, max_length=80)
+    date: date
+    title: str = Field(min_length=1, max_length=230)
+
+
+class InventoryCountUpdate(Model):
+    expectedVersion: int = Field(ge=1)
+    actual: float | None = Field(default=None, ge=0, le=100000000)
+    reason: str = Field(default='', max_length=4000)
+    photo: str = Field(default='', max_length=200)
+
+
+class InventoryFinalize(Model):
+    expectedVersion: int = Field(ge=1)
 
 
 class DecisionPreview(Model):

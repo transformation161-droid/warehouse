@@ -21,7 +21,7 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .database import Database, ROOT, digest, password_hash, password_valid, now, is_postgres
 from .imports import parse_import, commit_import
-from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview, DecisionVersionPreview, DecisionVersionConfirm
+from .models import Changes, Login, ImportFile, MediaFile, DecisionPreview, DecisionVersionPreview, DecisionVersionConfirm, InventoryPlanUpload, InventoryCountUpdate, InventoryFinalize
 from .reports import build_report, export
 from .service import accessible, apply_changes, fail
 from .storage import StorageFull, check_storage
@@ -592,6 +592,59 @@ def create_app(path=None, origin=None, secure=None):
         if action=='commit':return commit_import(db,actor,data)
         fail('Метод не найден',404)
 
+    @app.post('/api/inventory-plan/preview')
+    def preview_inventory_plan(payload:ImportFile,request:Request):
+        """Preview a source workbook without changing production records."""
+        actor=auth(request,True)
+        if actor['role']=='viewer':fail('Только просмотр',403)
+        from .inventory_plan import parse_plan,PlanError
+        import base64,binascii
+        try:raw=base64.b64decode(payload.content,validate=True)
+        except (ValueError,binascii.Error):fail('Неверные данные файла')
+        try:return parse_plan(raw,payload.name,mapping=payload.mapping)
+        except PlanError as error:fail(str(error))
+
+    @app.post('/api/inventory-plan/commit')
+    def import_inventory_plan(payload:InventoryPlanUpload,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import create_plan
+        return create_plan(db,actor,payload)
+
+    @app.patch('/api/inventory-lines/{ident}/count')
+    def save_inventory_fact(ident:str,payload:InventoryCountUpdate,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import count_line
+        return count_line(db,actor,ident,payload)
+
+    @app.post('/api/inventories/{ident}/finalize')
+    def finalize_inventory_plan(ident:str,payload:InventoryFinalize,request:Request):
+        actor=auth(request,True)
+        from .inventory_workflow import finalize_inventory
+        return finalize_inventory(db,actor,ident,payload)
+
+    @app.get('/api/inventories/{ident}/statement.{extension}')
+    def inventory_statement(ident:str,extension:str,request:Request):
+        """Per-inventory PDF/XLSX, server-filtered by the authenticated user's site RLS."""
+        if extension not in ('pdf','xlsx'):fail('Формат не поддерживается',404)
+        actor=auth(request)
+        with db.connect(actor) as con:state=db.snapshot(con,actor)
+        inventory=next((item for item in state['inventories'] if item['id']==ident),None)
+        if inventory is None:fail('Инвентаризация недоступна',404)
+        site=next((s for s in state['sites'] if s['id']==inventory['siteId']),None)
+        if site is None:fail('Объект недоступен',404)
+        lines=sorted((line for line in state['inventoryLines'] if line['inventoryId']==ident),
+                     key=lambda line:(line.get('sourceRow',0),line['id']))
+        from .inventory_statement import summarize_inventory,export_inventory_xlsx,export_inventory_pdf
+        statement=summarize_inventory(lines)
+        source={'site':site['name'],'title':inventory['title'],'date':inventory['date'],
+                'status':inventory['status']}
+        output=(export_inventory_xlsx(source,statement) if extension=='xlsx'
+                else export_inventory_pdf(source,statement))
+        mime=('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              if extension=='xlsx' else 'application/pdf')
+        return Response(output,media_type=mime,headers={'Cache-Control':'no-store',
+             'Content-Disposition':f'attachment; filename="ksu-inventory-statement.{extension}"'})
+
     @app.get('/api/reports/{extension}')
     def reports(extension:str,request:Request):
         actor=auth(request)
@@ -623,7 +676,7 @@ def create_app(path=None, origin=None, secure=None):
             if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release
