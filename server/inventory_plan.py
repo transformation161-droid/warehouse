@@ -11,6 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 import hashlib
 import io
+import json
 import re
 import zipfile
 
@@ -227,8 +228,19 @@ def parse_plan(raw: bytes, filename: str, *, sheet_index: int = 0, header_row: i
     if not result:
         raise PlanError("После заголовков нет позиций")
     total = sum(Decimal(row["expected"]) * Decimal(row["purchasePrice"]) for row in result)
+    # Excel files may contain timestamps and non-semantic ZIP metadata, so byte
+    # equality is not a reliable duplicate check. Compare normalized source
+    # positions instead, retaining the raw file checksum for provenance.
+    normalized = [{key: value for key, value in line.items()
+                   if key not in ("row", "actual")} for line in result]
+    normalized.sort(key=lambda line: (
+        line["externalId"], line["inventoryNumber"], line["item"],
+        json.dumps(line, ensure_ascii=False, sort_keys=True)))
+    plan_bytes = json.dumps(normalized, ensure_ascii=False, sort_keys=True,
+                            separators=(",", ":")).encode("utf-8")
     return {
         "sourceSha256": hashlib.sha256(raw).hexdigest(),
+        "planSha256": hashlib.sha256(plan_bytes).hexdigest(),
         "sheet": sheet_index,
         "headerRow": index + 1,
         "headers": [x[0] for x in headers.values()],
