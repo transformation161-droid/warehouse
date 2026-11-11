@@ -46,7 +46,9 @@ if ($LASTEXITCODE -ne 0 -or $dirty) {
 # Inspect the real Docker container identity; do not rely on the name alone.
 $raw = (& docker inspect $RestoreContainer)
 if ($LASTEXITCODE -ne 0 -or !$raw) { throw 'Independent restore container not found' }
-$detail = ($raw | ConvertFrom-Json)[0]
+$inspected = @($raw | ConvertFrom-Json)
+if ($inspected.Count -ne 1) { throw 'Expected exactly one isolated restore container' }
+$detail = $inspected[0]
 if ($detail.State.Running -ne $false) { throw 'Restore container must be stopped before this test' }
 if ($detail.Config.Image -notmatch '^postgres:17-bookworm@sha256:') {
     throw 'Unexpected Docker image; production container is not permitted'
@@ -55,7 +57,7 @@ if (@($detail.Mounts | Where-Object { $_.Name -eq "$RestoreContainer-data" -and
        $_.Destination -eq '/var/lib/postgresql/data' }).Count -ne 1) {
     throw 'Independent restore data volume identity mismatch'
 }
-if (@($detail.Mounts | Where-Object { $_.Name -eq "$RestoreContainer-tls" -and
+if (@($detail.Mounts | Where-Object { $_.Name -eq "${RestoreContainer}-tls" -and
        $_.Destination -eq '/private-tls' }).Count -ne 1) {
     throw 'Independent restore TLS volume identity mismatch'
 }
@@ -84,7 +86,7 @@ try {
         '--cpus','0.5','--memory','1g','--memory-swap','1g','--read-only',
         '--security-opt','no-new-privileges','--cap-drop','ALL',
         '--env-file',$adminEnv,
-        '--mount',"type=volume,src=$RestoreContainer-tls,dst=/config,readonly",
+        '--mount',"type=volume,src=${RestoreContainer}-tls,dst=/config,readonly",
         '--mount',"type=bind,src=$sql,dst=/input/inventory.sql,readonly",
         '--mount',"type=bind,src=$check,dst=/input/check.py,readonly",
         '--entrypoint','python',
