@@ -43,6 +43,20 @@ def test_report_with_title_and_69_unique_tools_is_uncounted():
     assert result["totalPurchaseValue"] == "85180.50"
 
 
+def test_same_positions_with_different_excel_title_are_same_plan():
+    from openpyxl import load_workbook
+    original = workbook_payload()
+    book = load_workbook(BytesIO(original))
+    book.active["A2"] = "Повторная выгрузка с другой шапкой"
+    output = BytesIO()
+    book.save(output)
+    a = parse_plan(original, "source.xlsx")
+    b = parse_plan(output.getvalue(), "fresh-export.xlsx")
+    assert a["sourceSha256"] != b["sourceSha256"]
+    assert a["planSha256"] == b["planSha256"]
+    assert a["positions"] == b["positions"] == 69
+
+
 def test_explicit_count_for_bulk_materials():
     headers = ["Наименование", "Количество", "Стоимость"]
     data = [["Профиль", 12, 250]]
