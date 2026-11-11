@@ -632,7 +632,8 @@ def create_app(path=None, origin=None, secure=None):
         if inventory is None:fail('Инвентаризация недоступна',404)
         site=next((s for s in state['sites'] if s['id']==inventory['siteId']),None)
         if site is None:fail('Объект недоступен',404)
-        lines=[line for line in state['inventoryLines'] if line['inventoryId']==ident]
+        lines=sorted((line for line in state['inventoryLines'] if line['inventoryId']==ident),
+                     key=lambda line:(line.get('sourceRow',0),line['id']))
         from .inventory_statement import summarize_inventory,export_inventory_xlsx,export_inventory_pdf
         statement=summarize_inventory(lines)
         source={'site':site['name'],'title':inventory['title'],'date':inventory['date'],
