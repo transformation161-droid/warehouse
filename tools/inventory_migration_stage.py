@@ -15,7 +15,8 @@ from psycopg.conninfo import conninfo_to_dict
 
 # The audited application modules come from the pinned Docker image.
 sys.path.insert(0, "/app")
-from server.pg_admin import fingerprints, validate_schema
+from server.pg_admin import fingerprints
+from server.pg_backup import validate_schema
 from server.pg_transport import connect
 
 
