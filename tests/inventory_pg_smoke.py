@@ -104,6 +104,16 @@ def assert_http(code,fn):
 def acceptance():
     os.environ["KSU_INVENTORY_PLAN_ENABLED"]="on"
     setup_database()
+    # Simulate runtime privileges being rebuilt during independent pg_restore.
+    # Existing v4 databases without the marker must also remain supported.
+    with psycopg.connect(ADMIN_DSN) as admin:
+        grant_runtime(admin, "ksu_runtime")
+        assert admin.execute(
+            "select has_function_privilege('ksu_runtime', "
+            "'ksu.inventory_count_version()','EXECUTE')").fetchone()[0]
+        assert not admin.execute(
+            "select has_function_privilege('public', "
+            "'ksu.inventory_count_version()','EXECUTE')").fetchone()[0]
     db=CI_DB()
 
     # A manager creates a plan; both tools are unchecked, not false shortages.
