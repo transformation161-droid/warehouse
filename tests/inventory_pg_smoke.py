@@ -162,6 +162,62 @@ def acceptance():
     assert xlsx[:2]==b"PK" and pdf[:4]==b"%PDF"
     assert len(pdf)>1000 and len(xlsx)>1000
 
+    # HTTP-level regression: identical browser API + release JS assets.
+    # Test uses a synthetic, isolated PG17 container only.
+    import time
+    from fastapi.testclient import TestClient
+    from server.database import digest
+    import server.app as app_module
+
+    os.environ.update(KSU_OFFLINE_MODE="off",KSU_OFFLINE_DEPLOYMENT_ID="a"*32,
+                      KSU_VIEWER_ACCESS="off",KSU_SECURE_COOKIES="1")
+    db.path=Path("/tmp/ksu-ci-inventory")/"staging"
+    db.path.parent.mkdir(parents=True,exist_ok=True)
+    original_database=app_module.Database
+    app_module.Database=lambda _:db
+    token="test-session-cookie-only"
+    csrf="test-csrf-only"
+    with psycopg.connect(ADMIN_DSN) as con:
+        con.execute("insert into ksu.sessions values(%s,%s,%s,%s)",
+                    (digest(token),MANAGER["id"],csrf,time.time()+3600))
+    try:
+        app=app_module.create_app("postgresql",origin="https://ksu.example.test",secure=True)
+        with TestClient(app,base_url="https://ksu.example.test") as client:
+            client.cookies.set("ksu_session",token,domain="ksu.example.test",secure=True)
+            headers={"Origin":"https://ksu.example.test",
+                     "X-CSRF-Token":csrf,"X-KSU-Expected-User":MANAGER["id"]}
+            assert client.get("/api/me",headers=headers).status_code==200
+            assert "inventory-count.js" in client.get("/").text
+            assert client.get("/inventory-count.js").status_code==200
+            plan={"name":"synthetic.xlsx","content":make_workbook("HTTP"),
+                  "siteId":"site_alpha","date":"2026-11-13",
+                  "title":"Тест HTTP"}
+            read=client.post("/api/inventory-plan/preview",json=plan,headers=headers)
+            assert read.status_code==200,(read.status_code,read.text)
+            assert read.json()["positions"]==2
+            put=client.post("/api/inventory-plan/commit",json=plan,headers=headers)
+            assert put.status_code==200,(put.status_code,put.text)
+            plan_id=put.json()["inventoryId"]
+            pdf=client.get("/api/inventories/"+plan_id+"/statement.pdf",headers=headers)
+            xlsx=client.get("/api/inventories/"+plan_id+"/statement.xlsx",headers=headers)
+            assert pdf.status_code==200 and pdf.content.startswith(b"%PDF")
+            assert xlsx.status_code==200 and xlsx.content.startswith(b"PK")
+            lines=[row for row in put.json()["state"]["inventoryLines"]
+                   if row["inventoryId"]==plan_id]
+            assert len(lines)==2 and all(row["actual"] is None for row in lines)
+            firstline=lines[0]
+            fact=client.patch("/api/inventory-lines/"+firstline["id"]+"/count",
+                 json={"expectedVersion":firstline["version"],"actual":1,
+                       "reason":"Проверен на месте"},headers=headers)
+            assert fact.status_code==200,(fact.status_code,fact.text)
+            blocked=client.post("/api/inventories/"+plan_id+"/finalize",
+                    json={"expectedVersion":1},headers=headers)
+            assert blocked.status_code==409,(blocked.status_code,blocked.text)
+            print("PASS: secured HTTP preview/commit/count, unchanged null, "
+                  "partial-finalization block, PDF/XLSX and browser asset")
+    finally:
+        app_module.Database=original_database
+
     print("PASS: PG17 RLS manager+inspector creation, shared counting, versions, ACL, "
           "duplicate import, finalization and Cyrillic PDF/XLSX")
 
