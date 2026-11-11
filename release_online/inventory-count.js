@@ -152,7 +152,7 @@
         '<button class="btn secondary" data-action="ip-next-page" '+
         (inventoryFilter.page===pages?'disabled':'')+'>Следующие 100</button></div>':'');
     const footer='<button class="btn secondary" data-action="history" data-collection="inventories" data-id="'+attr(id)+'">История</button>'+
-      (sessionUser.role==='manager'&&(typeof stageNext!=='undefined')&&
+      (inv.status==='final'&&sessionUser.role==='manager'&&(typeof stageNext!=='undefined')&&
         (stageNext[inv.stage||'primary']||[]).length?
         '<button class="btn secondary" data-action="change-stage" data-id="'+attr(id)+'">Стадия расхождений</button>':'')+
       '<button class="btn secondary" data-action="export-inventory-xlsx" data-id="'+attr(id)+'">XLSX</button>'+
