@@ -183,7 +183,7 @@ def acceptance():
     try:
         app=app_module.create_app("postgresql",origin="https://ksu.example.test",secure=True)
         with TestClient(app,base_url="https://ksu.example.test") as client:
-            client.cookies.set("ksu_session",token,domain="ksu.example.test",secure=True)
+            client.cookies.set("ksu_session",token,domain="ksu.example.test")
             headers={"Origin":"https://ksu.example.test",
                      "X-CSRF-Token":csrf,"X-KSU-Expected-User":MANAGER["id"]}
             assert client.get("/api/me",headers=headers).status_code==200
