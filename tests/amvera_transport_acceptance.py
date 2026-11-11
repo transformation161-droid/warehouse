@@ -9,6 +9,7 @@ from PIL import Image
 from contextlib import ExitStack
 import json
 import os
+import re
 from pathlib import Path
 import ssl
 import subprocess
@@ -43,7 +44,10 @@ def run(image,sha):
             key={'owner':'KSU_PG_BOOTSTRAP_DSN','admin':'KSU_PG_ADMIN_DSN','runtime':'KSU_DATABASE_URL','backup':'KSU_PG_BACKUP_DSN'}[role]
             call=docker('run','--rm','-i','--pull','never','--network',env['network'],*mounts,'--env-file',str(envfile(kind,selected,role,key)),
                 '-v',str(out)+':/output','-v',str(config)+':/input/config.json:ro','--entrypoint','python',image,'-m','server.managed_pg',operation,*args,
-                check=check,input=input,capture_output=True,text=True)
+                check=False,input=input,capture_output=True,text=True)
+            if check and call.returncode:
+                reason=re.search(r'operation refused: ([A-Za-z]+)\.',call.stderr)
+                raise AssertionError(operation+' refused: '+(reason[1] if reason else 'unknown private diagnostic'))
             return json.loads(call.stdout) if check else call
         def start(selected):
             docker('run','-d','--pull','never','--name',app,'--network',env['network'],*mounts,
@@ -69,7 +73,7 @@ def run(image,sha):
             assert command('source','amvera-external','owner','probe','--role','bootstrap')['postgres_tls'] is False
             # Same ingress certificate with strict CA/hostname validation must fail.
             strict=conninfo_to_dict(settings('source','verify-full','owner'));strict['host']=HOST
-            path=root/'strict-proxy.env';path.write_text('KSU_PG_BOOTSTRAP_DSN='+make_conninfo(**strict)+'\n')
+            path=root/'strict-proxy.env';path.write_text('KSU_PG_BOOTSTRAP_DSN='+make_conninfo(**strict)+'\n');path.chmod(0o600)
             rejected=docker('run','--rm','--pull','never','--network',env['network'],*mounts,'--env-file',str(path),'--entrypoint','python',image,'-m','server.managed_pg','probe','--role','bootstrap',check=False,capture_output=True,text=True)
             assert rejected.returncode!=0
             command('source','amvera-external','owner','bootstrap',input=json.dumps(env['passwords']))
@@ -85,7 +89,7 @@ def run(image,sha):
                 assert command('source',selected,'admin','init-production','--source','/input/config.json','--output','/output/refused',check=False).returncode!=0
                 assert facts(env['source']['admin'])==before
             plain=root/'plain-external.env'
-            plain.write_text('KSU_DATABASE_URL='+settings('source','amvera-external','runtime').replace(HOST,'synthetic-plain.invalid')+'\nKSU_PG_TRANSPORT_PROFILE=amvera-external\nKSU_AMVERA_PG_EXTERNAL_HOST=synthetic-plain.invalid\n')
+            plain.write_text('KSU_DATABASE_URL='+settings('source','amvera-external','runtime').replace(HOST,'synthetic-plain.invalid')+'\nKSU_PG_TRANSPORT_PROFILE=amvera-external\nKSU_AMVERA_PG_EXTERNAL_HOST=synthetic-plain.invalid\n');plain.chmod(0o600)
             rejected=docker('run','--rm','--pull','never','--network',env['network'],*mounts,'--env-file',str(plain),'--entrypoint','python',image,'-m','server.managed_pg','probe',check=False,capture_output=True,text=True)
             assert rejected.returncode!=0
             assert command('source','amvera-external','admin','preflight','--role','runtime',check=False).returncode!=0

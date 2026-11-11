@@ -1,5 +1,4 @@
 """Synthetic provider transport matrix, no live provider or credentials."""
-import ast
 import os
 from pathlib import Path
 import socket
@@ -66,6 +65,22 @@ class Profiles(unittest.TestCase):
                 self.assertFalse(observed['end_to_end_tls_claimed'])
         with patch.dict(os.environ,EXTERNAL,clear=True),self.assertRaises(ValueError):session_transport(connection(False,False))
         with patch.dict(os.environ,{},clear=True),self.assertRaises(ValueError):session_transport(connection(True,False))
+
+    def test_connection_checks_actual_client_tls_and_private_peer(self):
+        # Fail before any caller can execute SQL on a mismatched connection.
+        from unittest.mock import Mock
+        c=Mock();c.pgconn.ssl_in_use=False
+        with patch.dict(os.environ,EXTERNAL,clear=True),patch('server.pg_transport.psycopg.connect',return_value=c):
+            with self.assertRaises(ValueError):connect(BASE+' sslmode=require')
+            c.close.assert_called_once()
+        c=Mock();c.pgconn.ssl_in_use=False;c.info.hostaddr='8.8.8.8'
+        dns=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('10.0.0.7',5432))]
+        with patch.dict(os.environ,INTERNAL,clear=True),patch('server.pg_transport.socket.getaddrinfo',return_value=dns),patch('server.pg_transport.psycopg.connect',return_value=c) as opened:
+            with self.assertRaises(ValueError):connect(INSIDE)
+            self.assertEqual(opened.call_args.kwargs['hostaddr'],'10.0.0.7');c.close.assert_called_once()
+        with patch.dict(os.environ,{},clear=True):
+            with self.assertRaises(ValueError) as failed:validate_transport('password=SYNTHETIC-SECRET broken')
+            self.assertNotIn('SYNTHETIC-SECRET',str(failed.exception))
 
     def test_release_business_ui_and_22_questions_are_byte_preserved(self):
         base='87373094b6b84acd56f2a7dc7627d73f84716562'
