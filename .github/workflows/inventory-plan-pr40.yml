@@ -154,3 +154,18 @@ jobs:
           name: pr40-managed-postgres-source-only
           path: pr40-release/
           if-no-files-found: error
+          # GitHub artifact upload excludes .dockerignore by default. This source-only
+          # allowlisted bundle REQUIRES that hidden file for safe, reproducible builds.
+          include-hidden-files: true
+      - name: Download the actual published release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pr40-managed-postgres-source-only
+          path: pr40-downloaded
+      - name: Verify published artifact after GitHub upload/download
+        env:
+          PR40_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test -f pr40-downloaded/.dockerignore
+          python -m deploy.release_candidate.bundle --verify pr40-downloaded
+          python -c "import json,os,pathlib; path=pathlib.Path('pr40-downloaded/release-manifest.json'); data=json.loads(path.read_text()); assert data['source_sha']==os.environ['PR40_HEAD']; assert data['profile']=='postgresql'; print('PUBLISHED ARCHIVE VERIFIED:',data['source_sha'],len(data['files']),'hashed source files')"
