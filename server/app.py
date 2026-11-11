@@ -592,6 +592,40 @@ def create_app(path=None, origin=None, secure=None):
         if action=='commit':return commit_import(db,actor,data)
         fail('Метод не найден',404)
 
+    @app.post('/api/inventory-plan/preview')
+    def preview_inventory_plan(payload:ImportFile,request:Request):
+        """Preview a source workbook without changing production records."""
+        actor=auth(request,True)
+        if actor['role']=='viewer':fail('Только просмотр',403)
+        from .inventory_plan import parse_plan,PlanError
+        import base64,binascii
+        try:raw=base64.b64decode(payload.content,validate=True)
+        except (ValueError,binascii.Error):fail('Неверные данные файла')
+        try:return parse_plan(raw,payload.name,mapping=payload.mapping)
+        except PlanError as error:fail(str(error))
+
+    @app.get('/api/inventories/{ident}/statement.{extension}')
+    def inventory_statement(ident:str,extension:str,request:Request):
+        """Per-inventory PDF/XLSX, server-filtered by the authenticated user's site RLS."""
+        if extension not in ('pdf','xlsx'):fail('Формат не поддерживается',404)
+        actor=auth(request)
+        with db.connect(actor) as con:state=db.snapshot(con,actor)
+        inventory=next((item for item in state['inventories'] if item['id']==ident),None)
+        if inventory is None:fail('Инвентаризация недоступна',404)
+        site=next((s for s in state['sites'] if s['id']==inventory['siteId']),None)
+        if site is None:fail('Объект недоступен',404)
+        lines=[line for line in state['inventoryLines'] if line['inventoryId']==ident]
+        from .inventory_statement import summarize_inventory,export_inventory_xlsx,export_inventory_pdf
+        statement=summarize_inventory(lines)
+        source={'site':site['name'],'title':inventory['title'],'date':inventory['date'],
+                'status':inventory['status']}
+        output=(export_inventory_xlsx(source,statement) if extension=='xlsx'
+                else export_inventory_pdf(source,statement))
+        mime=('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              if extension=='xlsx' else 'application/pdf')
+        return Response(output,media_type=mime,headers={'Cache-Control':'no-store',
+             'Content-Disposition':f'attachment; filename="ksu-inventory-statement.{extension}"'})
+
     @app.get('/api/reports/{extension}')
     def reports(extension:str,request:Request):
         actor=auth(request)
