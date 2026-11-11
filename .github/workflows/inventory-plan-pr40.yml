@@ -73,3 +73,28 @@ jobs:
           python -m pip install "httpx>=0.27,<1"
       - name: PostgreSQL 17 multi-user inventory test
         run: PYTHONPATH=. python tests/inventory_pg_smoke.py
+
+  release-source-bundle:
+    needs: [inventory-plan, postgres17-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Export source-only PostgreSQL release candidate (never deploy)
+        env:
+          PR40_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -m deploy.release_candidate.bundle --ref "$PR40_HEAD" --output pr40-release --profile postgresql
+          python -m deploy.release_candidate.bundle --verify pr40-release
+      - name: Upload verified source bundle for owner review
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr40-managed-postgres-source-only
+          path: pr40-release/
+          if-no-files-found: error
