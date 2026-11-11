@@ -133,14 +133,17 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         if actor['role']=='inspector':
             if parent['author_id']!=actor['id'] and (not old or not parent_data.get('sourceHash')):
                 fail('Можно изменять только собственную инвентаризацию либо факт по доступному плану',403)
-            if old and parent_data.get('sourceHash'):
-                # Once a plan is imported, an inspector cannot alter its identity,
-                # expected amount, procurement price, object or other master data.
-                from .models import InventoryLine
-                before_data=InventoryLine.model_validate(before).model_dump(mode='json')
-                allowed={'actual','reason','photo','countedBy','countedAt'}
-                if any(data[key]!=before_data[key] for key in data if key not in allowed):
-                    fail('Исполнитель может изменять только факт, примечание и фото',403)
+        if old and parent_data.get('sourceHash'):
+            # Neither manager nor inspector may silently rewrite the imported plan.
+            # Any future plan correction must be a separate audited operation.
+            from .models import InventoryLine
+            before_data=InventoryLine.model_validate(before).model_dump(mode='json')
+            allowed={'actual','reason','photo','countedBy','countedAt'}
+            if any(data[key]!=before_data[key] for key in data if key not in allowed):
+                fail('Загруженный план неизменяем: исправлять можно только результат пересчёта',403)
+        if parent_data.get('sourceHash') and data.get('actual') is not None and (
+            data['actual']!=data['expected'] and not data.get('reason','').strip()):
+            fail('Поясните выявленное расхождение',422)
         if old:
             changed=any(data.get(field)!=before.get(field) for field in ('actual','reason','photo'))
             if changed:
@@ -197,6 +200,9 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         for field in ('photo','evidence'):
             validate_photo(con, actor, site, data[field])
     if collection=='inventories':
+        if before and before.get('sourceHash') and any(
+            data[k]!=before.get(k) for k in ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
+            fail('Реквизиты загруженного плана изменять нельзя',409)
         if before and before.get('status')=='final':
             if data['status']!='final' or any(data[k]!=before.get(k) for k in ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
                 fail('Завершённую инвентаризацию нельзя вернуть в черновик или изменить',409)
