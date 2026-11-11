@@ -206,10 +206,19 @@ def acceptance():
                    if row["inventoryId"]==plan_id]
             assert len(lines)==2 and all(row["actual"] is None for row in lines)
             firstline=lines[0]
+            from PIL import Image
+            picture=BytesIO()
+            Image.new("RGB",(24,24),(90,105,130)).save(picture,format="JPEG")
+            attached=client.post("/api/media",json={"siteId":"site_alpha",
+                  "content":base64.b64encode(picture.getvalue()).decode()},headers=headers)
+            assert attached.status_code==200,(attached.status_code,attached.text)
+            photo=attached.json()["url"]
             fact=client.patch("/api/inventory-lines/"+firstline["id"]+"/count",
                  json={"expectedVersion":firstline["version"],"actual":1,
-                       "reason":"Проверен на месте"},headers=headers)
+                       "reason":"Проверен на месте","photo":photo},headers=headers)
             assert fact.status_code==200,(fact.status_code,fact.text)
+            assert next(row for row in fact.json()["state"]["inventoryLines"]
+                        if row["id"]==firstline["id"])["photo"]==photo
             blocked=client.post("/api/inventories/"+plan_id+"/finalize",
                     json={"expectedVersion":1},headers=headers)
             assert blocked.status_code==409,(blocked.status_code,blocked.text)
