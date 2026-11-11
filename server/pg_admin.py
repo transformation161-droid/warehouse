@@ -12,7 +12,7 @@ import psycopg
 from psycopg import sql
 from .database import ROOT,Database
 from .maintenance import snapshot_database
-from .pg_transport import validate_transport
+from .pg_transport import validate_transport,connect
 
 LEGACY_TABLES=('users','user_sites','records','audit','mutations','media','imports','decision_records')
 from .decision_version_schema import TABLES as VERSION_TABLES,schema as version_schema
@@ -109,7 +109,7 @@ def upgrade_schema(connection):
 
 def upgrade(dsn,role,backup_role=None):
     validate_transport(dsn)
-    with psycopg.connect(dsn) as connection:
+    with connect(dsn) as connection:
         before=fingerprints(connection,True,LEGACY_TABLES)
         upgrade_schema(connection)
         if fingerprints(connection,True,LEGACY_TABLES)!=before:raise ValueError('Existing business data changed during upgrade')
@@ -120,7 +120,7 @@ def upgrade(dsn,role,backup_role=None):
 
 def initialize(dsn,role,backup_role=None):
     validate_transport(dsn)
-    with psycopg.connect(dsn) as connection:
+    with connect(dsn) as connection:
         if connection.execute("select to_regnamespace('ksu')").fetchone()[0]:raise ValueError('Destination schema exists; refusing overwrite')
         connection.execute((ROOT/'server/postgres/001_initial.sql').read_text())
         upgrade_schema(connection)
@@ -152,7 +152,7 @@ def migrate_sqlite(source,dsn,standalone=False):
         from .viewer_schema import upgrade_users_copy
         upgrade_users_copy(snapshot)
         Database(snapshot)  # Upgrade only the private copy, never the source pilot.
-        with closing(sqlite3.connect(snapshot)) as old,psycopg.connect(dsn) as target:
+        with closing(sqlite3.connect(snapshot)) as old,connect(dsn) as target:
             known=set(TABLES)|{'sessions','attempts','sqlite_sequence'}
             if {r[0] for r in old.execute("select name from sqlite_master where type='table'")}-known:raise ValueError('Unsupported source tables; refusing to omit data')
             expected=fingerprints(old)
@@ -181,7 +181,7 @@ def provision_roles(dsn,runtime_role,backup_role=None):
     validate_transport(dsn)
     password=os.environ['KSU_PG_RUNTIME_PASSWORD']
     if len(password)<20:raise ValueError('Use a generated service password of at least 20 characters')
-    with psycopg.connect(dsn) as connection:
+    with connect(dsn) as connection:
         connection.execute(sql.SQL('CREATE ROLE {} LOGIN NOSUPERUSER NOINHERIT NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD {}').format(sql.Identifier(runtime_role),sql.Literal(password)))
         if backup_role:
             backup_password=os.environ['KSU_PG_BACKUP_PASSWORD']

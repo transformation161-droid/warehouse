@@ -16,7 +16,7 @@ from psycopg.conninfo import conninfo_to_dict
 from .backup_job import atomic_json
 from .pg_admin import TABLES,fingerprints,initialize,migrate_sqlite
 from .pg_backup import backup_database,restore_database,validate_schema
-from .pg_transport import validate_transport
+from .pg_transport import validate_transport,connect,session_transport
 from .release_schema import checksum,prepare_sqlite
 
 ROLES=('ksu_admin','ksu_runtime','ksu_backup')
@@ -28,13 +28,12 @@ def binding(name):
     return Path(file).read_text().strip() if file else direct
 
 
-def tls(dsn):
-    info=validate_transport(dsn)
-    if info.get('sslmode')!='verify-full' or not info.get('host') or ',' in info['host'] or info['host'].startswith('/'):
-        raise ValueError('Managed connections require a single hostname and explicit verify-full TLS')
-    ca=info.get('sslrootcert','')
-    if not ca or not Path(ca).is_file():raise ValueError('Explicit trusted CA file required')
-    return info
+def transport(dsn):
+    return validate_transport(dsn,managed=True)
+
+
+# Compatibility for owner tooling from PR37/38; use transport() in new code.
+tls=transport
 
 
 def role_properties(con,role):
@@ -44,11 +43,11 @@ def role_properties(con,role):
 
 
 def preflight(dsn,kind='runtime'):
-    info=tls(dsn)
+    info=transport(dsn)
     if kind not in ('runtime','admin','backup') or info['user']!='ksu_'+kind:raise ValueError('Explicit service role binding required')
-    with psycopg.connect(dsn,connect_timeout=10) as con:
+    with connect(dsn,connect_timeout=10) as con:
         con.execute('set transaction isolation level repeatable read read only')
-        if not con.execute('select ssl from pg_stat_ssl where pid=pg_backend_pid()').fetchone()[0]:raise ValueError('TLS session required')
+        observed=session_transport(con)
         role_properties(con,info['user'])
         version=con.info.server_version
         if not 170000<=version<180000:raise ValueError('This candidate is validated for PostgreSQL 17; approve another major separately')
@@ -68,13 +67,13 @@ def preflight(dsn,kind='runtime'):
             if missing:raise ValueError('Complete backup SELECT policies required')
             # Read-only consistent fingerprints exercise every per-role RLS policy.
             fingerprints(con,True)
-        return {'backend':'postgresql','major':17,'tls_verified':True,'role':kind,'schema':4}
+        return {'backend':'postgresql','major':17,'role':kind,'schema':4,**observed}
 
 
 def bootstrap(dsn,passwords):
-    tls(dsn)
+    transport(dsn)
     if set(passwords)!=set(ROLES) or any(not isinstance(p,str) or len(p)<20 for p in passwords.values()):raise ValueError('Three generated service passwords required')
-    with psycopg.connect(dsn,connect_timeout=10) as con:
+    with connect(dsn,connect_timeout=10) as con:
         # This is for the owner's newly approved database only; never retrofit a live DB.
         if con.execute("select exists(select 1 from pg_namespace where nspname not in ('public','information_schema') and nspname not like 'pg_%')").fetchone()[0] or con.execute("select exists(select 1 from pg_class where relnamespace='public'::regnamespace and relkind in ('r','p','v','m','S'))").fetchone()[0]:raise ValueError('New empty target database required')
         for role in ROLES:
@@ -88,7 +87,7 @@ def bootstrap(dsn,passwords):
 
 
 def migrate(source,dsn,output):
-    tls(dsn)
+    transport(dsn)
     if conninfo_to_dict(dsn)['user']!='ksu_admin':raise ValueError('Offline schema admin required')
     if os.getenv('KSU_OFFLINE_MODE') is not None:raise ValueError('Run migration outside application runtime settings')
     source=Path(source);original=checksum(source);output=Path(output)
@@ -115,10 +114,10 @@ def migrate(source,dsn,output):
 
 
 def verify_report(dsn,path):
-    tls(dsn);report=json.loads(Path(path).read_text())
+    transport(dsn);report=json.loads(Path(path).read_text())
     fresh=report.get('format')=='ksu-production-initialization-v1' and report.get('initialized') is True
     if not (fresh or report.get('source_unchanged')) or not report.get('sessions_revoked') or set(report.get('tables',{}))!=set(TABLES):raise ValueError('Complete private setup/migration report required')
-    with psycopg.connect(dsn,connect_timeout=10) as con:
+    with connect(dsn,connect_timeout=10) as con:
         con.execute('set transaction isolation level repeatable read read only')
         validate_schema(con)
         if fingerprints(con,True)!=report['tables']:raise ValueError('Target differs from migrated source')
@@ -128,17 +127,19 @@ def verify_report(dsn,path):
 
 def main():
     import argparse,sys
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('operation',choices=('bootstrap','init-schema','init-production','template','migrate','verify','preflight','backup','restore'))
-    parser.add_argument('--source');parser.add_argument('--output');parser.add_argument('--report');parser.add_argument('--role',choices=('runtime','admin','backup'),default='runtime')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('operation',choices=('bootstrap','init-schema','init-production','template','probe','migrate','verify','preflight','backup','restore'))
+    parser.add_argument('--source');parser.add_argument('--output');parser.add_argument('--report');parser.add_argument('--role',choices=('runtime','admin','backup','bootstrap'),default='runtime')
     args=parser.parse_args()
     try:
         if args.operation=='template':
             from .production_init import template
             atomic_json(Path(args.output),template(),exclusive=True)
             print(json.dumps({'template_written':True,'owner_approval_required':True}));return
-        key={'bootstrap':'KSU_PG_BOOTSTRAP_DSN','init-schema':'KSU_PG_ADMIN_DSN','init-production':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN','verify':'KSU_PG_BACKUP_DSN','restore':'KSU_PG_ADMIN_DSN','migrate':'KSU_PG_ADMIN_DSN'}.get(args.operation,{'runtime':'KSU_DATABASE_URL','admin':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN'}[args.role])
-        dsn=binding(key);tls(dsn)
-        if args.operation=='bootstrap':result=bootstrap(dsn,json.load(sys.stdin))
+        key={'bootstrap':'KSU_PG_BOOTSTRAP_DSN','init-schema':'KSU_PG_ADMIN_DSN','init-production':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN','verify':'KSU_PG_BACKUP_DSN','restore':'KSU_PG_ADMIN_DSN','migrate':'KSU_PG_ADMIN_DSN'}.get(args.operation,{'runtime':'KSU_DATABASE_URL','admin':'KSU_PG_ADMIN_DSN','backup':'KSU_PG_BACKUP_DSN','bootstrap':'KSU_PG_BOOTSTRAP_DSN'}[args.role])
+        dsn=binding(key);transport(dsn)
+        if args.operation=='probe':
+            with connect(dsn,connect_timeout=10) as con:result={'connected':True,'server_major':con.info.server_version//10000,**session_transport(con)}
+        elif args.operation=='bootstrap':result=bootstrap(dsn,json.load(sys.stdin))
         elif args.operation=='init-schema':
             if conninfo_to_dict(dsn)['user']!='ksu_admin':raise ValueError('Offline schema admin required')
             initialize(dsn,'ksu_runtime','ksu_backup');result={'schema':4,'business_data_created':False}

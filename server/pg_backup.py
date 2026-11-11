@@ -13,7 +13,7 @@ import zipfile
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from .pg_admin import fingerprints, grant_runtime, grant_backup, TABLES, LEGACY_TABLES, upgrade_schema, SCHEMA_VERSION, tables_for_version
-from .pg_transport import validate_transport
+from .pg_transport import validate_transport,connect,LIBPQ_ENV
 
 
 class BackupError(Exception):pass
@@ -21,12 +21,13 @@ class BackupError(Exception):pass
 
 def tool_environment(dsn):
     info=validate_transport(dsn)
-    # Remote backups must validate both CA and hostname; localhost is the local test path.
-    if info.get('host','') not in ('','localhost','127.0.0.1','::1') and not info.get('host','').startswith('/') and info.get('sslmode')!='verify-full':
-        raise BackupError('Remote PostgreSQL requires sslmode=verify-full')
     names={'host':'PGHOST','hostaddr':'PGHOSTADDR','port':'PGPORT','user':'PGUSER','password':'PGPASSWORD','dbname':'PGDATABASE',
-           'sslmode':'PGSSLMODE','sslrootcert':'PGSSLROOTCERT','sslcert':'PGSSLCERT','sslkey':'PGSSLKEY'}
-    env=dict(os.environ)  # Preserve injected password/passfile/CA bindings; explicit DSN wins.
+           'gssencmode':'PGGSSENCMODE','sslsni':'PGSSLSNI','sslnegotiation':'PGSSLNEGOTIATION','passfile':'PGPASSFILE','sslmode':'PGSSLMODE','sslrootcert':'PGSSLROOTCERT','sslcert':'PGSSLCERT','sslkey':'PGSSLKEY'}
+    env=dict(os.environ)
+    if os.getenv('KSU_PG_TRANSPORT_PROFILE','verify-full')!='verify-full':
+        # Native libpq must use the same explicit route/mode as psycopg.
+        for key in tuple(env):
+            if key in LIBPQ_ENV:env.pop(key)
     env.update({names[key]:value for key,value in info.items() if key in names});return env
 
 
@@ -69,7 +70,7 @@ def backup_database(dsn,destination):
     if shutil.disk_usage(target.parent).free<maximum*2+64*1024*1024:raise BackupError('Need room for dump and package within the fixed byte cap')
     with tempfile.TemporaryDirectory(prefix='.ksu-pg-backup-',dir=target.parent) as folder:
         dump=Path(folder)/'database.dump';bundle=Path(folder)/'backup.ksubackup'
-        with psycopg.connect(dsn,connect_timeout=10) as connection:
+        with connect(dsn,connect_timeout=10) as connection:
             connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             if connection.execute("select has_table_privilege(current_user,'ksu.records','INSERT,UPDATE,DELETE')").fetchone()[0]:raise BackupError('Backup requires a dedicated read-only database role')
             if not connection.execute('select pg_try_advisory_lock(140014)').fetchone()[0]:raise BackupError('Another database backup is active')
@@ -97,7 +98,7 @@ def backup_database(dsn,destination):
 
 def restore_database(source,dsn,runtime_role,backup_role=None):
     source=Path(source).resolve(strict=True)
-    with psycopg.connect(dsn,connect_timeout=10) as connection:
+    with connect(dsn,connect_timeout=10) as connection:
         if connection.execute("select to_regnamespace('ksu')").fetchone()[0]:raise BackupError('Destination schema exists; refusing overwrite')
     maximum=int(os.getenv('KSU_PG_BACKUP_MAX_BYTES',str(512*1024*1024)))
     if source.stat().st_size>maximum:raise BackupError('Restore package exceeds fixed cap')
@@ -115,7 +116,7 @@ def restore_database(source,dsn,runtime_role,backup_role=None):
         if checksum(dump)!=manifest['dump_sha256']:raise BackupError('Backup checksum mismatch')
         # pg_restore executes SQL: only restore packages from a trusted administrator.
         run_tool('pg_restore',['--single-transaction','--exit-on-error','--no-owner','--no-acl','--dbname='+conninfo_to_dict(dsn).get('dbname','postgres'),str(dump)],dsn)
-        with psycopg.connect(dsn,connect_timeout=10) as connection:
+        with connect(dsn,connect_timeout=10) as connection:
             validate_schema(connection,manifest['schema_version'])
             actual=fingerprints(connection,True,expected_tables)
             if actual!=manifest['tables']:raise BackupError('Restored table checksums differ; do not start the app')

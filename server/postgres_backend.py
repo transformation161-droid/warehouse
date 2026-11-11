@@ -8,7 +8,7 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from .database import Database
-from .pg_transport import validate_transport
+from .pg_transport import validate_transport,connect
 from .storage import StorageFull
 
 
@@ -76,7 +76,7 @@ class PostgresDatabase:
 
     @contextmanager
     def connect(self,actor=None):
-        with psycopg.connect(self.dsn,connect_timeout=10,row_factory=dict_row) as connection:
+        with connect(self.dsn,connect_timeout=10,row_factory=dict_row) as connection:
             connection.execute("select set_config('search_path','ksu,pg_catalog',true)")
             connection.execute("select set_config('ksu.actor',%s,true)",(actor['id'] if actor else '',))
             connection.execute("set local statement_timeout='120s'")

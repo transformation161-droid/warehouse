@@ -1,7 +1,7 @@
-name: Clean PostgreSQL pilot and checklist
+name: PostgreSQL transport profiles
 on:
   pull_request:
-    branches: [release/production-candidate, release/amvera-postgres-candidate]
+    branches: [release/production-candidate, release/amvera-postgres-candidate, release/clean-postgres-pilot]
 permissions:
   contents: read
 concurrency:
@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
       - name: Accepted source preservation, TLS gates, migrations and SQLite compatibility
-        run: python -m unittest -v tests.test_production_init tests.test_managed_pg tests.test_production_candidate tests.test_pg_finalize tests.test_offline_release tests.test_release_v3_upgrade tests.test_viewer tests.test_backup_job tests.test_api
+        run: python -m unittest -v tests.test_pg_transport_profiles tests.test_production_init tests.test_managed_pg tests.test_production_candidate tests.test_pg_finalize tests.test_offline_release tests.test_release_v3_upgrade tests.test_viewer tests.test_backup_job tests.test_api
       - run: python -m tests.release_upgrade
   real-postgres-and-image:
     runs-on: ubuntu-latest
@@ -54,11 +54,14 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as out:
               for key,value in values.items():out.write(key+'='+value+'\n')
           PY
-      - run: python -m playwright install --with-deps chromium
-      - name: Clean setup, checklist UI, immutable offline history and independent restore
+      - name: Default verify-full setup, roles, offline contracts and independent restore
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python -u -m tests.clean_pg_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --browser --upstream --output "$RUNNER_TEMP/managed-runtime.json"
+        run: python -u -m tests.clean_pg_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --upstream --output "$RUNNER_TEMP/managed-runtime.json"
+      - name: Amvera TLS terminator and private plaintext service, exact image
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python -u -m tests.amvera_transport_acceptance --image ksu-managed:rc --sha "$SOURCE_SHA" --output "$RUNNER_TEMP/amvera-transport.json"
       - uses: actions/upload-artifact@v4
         with:
           name: managed-source-${{ github.event.pull_request.head.sha }}
@@ -69,7 +72,9 @@ jobs:
         if: always()
         with:
           name: managed-runtime
-          path: ${{ runner.temp }}/managed-runtime.json
+          path: |
+            ${{ runner.temp }}/managed-runtime.json
+            ${{ runner.temp }}/amvera-transport.json
           retention-days: 14
   windows-owner-tools:
     runs-on: windows-latest
