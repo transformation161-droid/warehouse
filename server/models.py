@@ -69,7 +69,11 @@ class Inventory(Model):
     status: Literal['draft', 'final'] = 'draft'
     stage: Literal['primary', 'confirmed', 'corrected', 'investigation', 'approved', 'recovered'] = 'primary'
     decision: str = Field(default='', max_length=4000)
-    sourceHash: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?(Model):
+    sourceHash: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?$')
+    sourceName: str = Field(default='', max_length=200)
+
+
+class InventoryLine(Model):
     inventoryId: str
     item: str = Field(min_length=1, max_length=500)
     sku: str = Field(default='', max_length=120)
