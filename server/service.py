@@ -200,9 +200,12 @@ def save_record(con, actor, collection, ident, payload, expected_version):
         for field in ('photo','evidence'):
             validate_photo(con, actor, site, data[field])
     if collection=='inventories':
-        if before and before.get('sourceHash') and any(
-            data[k]!=before.get(k) for k in ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
-            fail('Реквизиты загруженного плана изменять нельзя',409)
+        if before and before.get('sourceHash'):
+            if any(data[k]!=before.get(k) for k in
+                   ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
+                fail('Реквизиты загруженного плана изменять нельзя',409)
+            if before['status']!='final' and data['stage']!=before['stage']:
+                fail('Стадии расхождений доступны только после завершения пересчёта',409)
         if before and before.get('status')=='final':
             if data['status']!='final' or any(data[k]!=before.get(k) for k in ('siteId','date','title','plannedPositions','sourceHash','sourceName')):
                 fail('Завершённую инвентаризацию нельзя вернуть в черновик или изменить',409)
