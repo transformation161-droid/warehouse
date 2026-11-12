@@ -12,11 +12,11 @@ from server.inventory_statement import (
 def lines():
     return [
         {"item": "Дрель", "sku": "001", "unit": "шт.", "expected": 1,
-         "actual": None, "purchasePrice": "12500.00"},
+         "actual": None, "purchasePrice": "12500.00", "brand": "Makita"},
         {"item": "Перфоратор", "sku": "002", "unit": "шт.", "expected": 1,
-         "actual": 0, "purchasePrice": "18000.00"},
+         "actual": 0, "purchasePrice": "18000.00", "brand": "Bosch"},
         {"item": "Лазерный уровень", "sku": "003", "unit": "шт.", "expected": 1,
-         "actual": 2, "purchasePrice": "9500.00"},
+         "actual": 2, "purchasePrice": "9500.00", "brand": "DeWalt"},
     ]
 
 
@@ -31,6 +31,7 @@ def test_unchecked_distinct_from_missing_and_both_variances_separate():
     assert str(result["shortagePurchaseValue"]) == "18000.00"
     assert str(result["surplusPurchaseValue"]) == "9500.00"
     assert result["rows"][0]["status"] == "Не проверено"
+    assert result["rows"][1]["brand"] == "Bosch"
     assert result["rows"][0]["difference"] is None
     assert result["rows"][1]["status"] == "Недостача"
     assert result["rows"][2]["status"] == "Излишек"
@@ -63,11 +64,17 @@ def test_export_spreadsheet_preserves_unchecked_and_currency():
         report,
     )
     ws = load_workbook(BytesIO(data), read_only=True, data_only=True).active
-    assert ws["F6"].value is None   # not counted
-    assert ws["F7"].value == 0      # counted but missing
-    assert ws["K7"].value == 18000
-    assert ws["L8"].value == 9500
-    assert ws["K9"].value == 18000
+    assert ws["C5"].value == "Бренд"
+    assert ws["N5"].value == "Статус"
+    assert ws["C7"].value == "Bosch"
+    assert ws["N6"].value == "Не проверено"
+    assert ws["N7"].value == "Недостача"
+    assert ws["N8"].value == "Излишек"
+    assert ws["G6"].value is None   # not counted
+    assert ws["G7"].value == 0      # counted but missing
+    assert ws["L7"].value == 18000
+    assert ws["M8"].value == 9500
+    assert ws["L9"].value == 18000
 
 
 def test_safe_text_not_an_excel_formula():
