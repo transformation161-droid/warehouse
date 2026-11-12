@@ -146,7 +146,7 @@ if ($TrustTestCA) {
  $existing=Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq $prepared.ca_thumbprint }
  if (-not $existing) {
   # Explicit -TrustTestCA is consent for this exact new CA. -user never changes machine roots.
-  Write-Host 'Installing this test CA in current-user roots only...'
+  Write-Host ('Windows may show Security Warning. Confirm only INSTRAKT PR41 TEST CA; thumbprint '+$prepared.ca_thumbprint+'.')
   & (Join-Path $env:SystemRoot 'System32\certutil.exe') -user -f -addstore Root $caFile | Out-Null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path ('Cert:\CurrentUser\Root\'+$prepared.ca_thumbprint))) { throw 'Test CA import failed; TLS verification remains enabled.' }
  }

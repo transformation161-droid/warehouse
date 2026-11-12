@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('pr41 native space '+[Guid]::NewGuid().ToString('N'))
 $kit=$env:PR41_KIT
-$oldPath=$env:PATH;$oldRoot=$env:PR41_NATIVE_ROOT;$testCA=$null
+$oldPath=$env:PATH;$oldRoot=$env:PR41_NATIVE_ROOT;$testCA=$null;$consentJob=$null
 function Assert($condition,$message) { if (-not $condition) { throw $message } }
 function Refuses([scriptblock]$operation,$message) { $failed=$false;try { & $operation } catch {$failed=$true};Assert $failed $message }
 New-Item -ItemType Directory -Path $root | Out-Null
@@ -96,7 +96,8 @@ public class PR41SyntheticDocker {
  # The exact owner command including process-only ExecutionPolicy and real CA import.
  # This ephemeral CI user's certificate is removed by exact thumbprint in finally.
  Write-Host 'CA check: creating one ephemeral certificate in the CI user store.'
- $testCA=New-SelfSignedCertificate -Type Custom -Subject 'CN=INSTRAKT PR41 CI TEST CA' -CertStoreLocation Cert:\CurrentUser\My -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -NotAfter (Get-Date).AddDays(1) -KeyExportPolicy NonExportable
+ $testSubject='INSTRAKT PR41 CI '+$state.instance
+ $testCA=New-SelfSignedCertificate -Type Custom -Subject ('CN='+$testSubject) -CertStoreLocation Cert:\CurrentUser\My -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -NotAfter (Get-Date).AddDays(1) -KeyExportPolicy NonExportable
  Export-Certificate -Cert $testCA -FilePath (Join-Path $profile 'private/PR41-Test-CA.cer') | Out-Null
  $preparedPath=Join-Path $profile 'private/prepared.json'
  $prepared=Get-Content -Raw $preparedPath | ConvertFrom-Json
@@ -106,7 +107,51 @@ public class PR41SyntheticDocker {
  $prepared.ca_thumbprint=$testCA.Thumbprint;$prepared | ConvertTo-Json -Depth 5 | Set-Content $preparedPath
  Write-Host ('CA check: exact owner command via '+(Get-Command powershell.exe).Source)
  Write-Host ('CA check: native Docker stub via '+(Get-Command docker).Source)
+ # Windows protects new current-user roots with a native consent dialog. The owner
+ # clicks Yes; CI clicks only its own unique certificate in certutil's dialog.
+ $consentJob=Start-Job -ArgumentList $testSubject -ScriptBlock {
+  param($ExpectedSubject)
+  Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+public class PR41OwnCertificateConsent {
+ delegate bool Callback(IntPtr w,IntPtr p);
+ [DllImport("user32.dll")] static extern bool EnumWindows(Callback c,IntPtr p);
+ [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr w,Callback c,IntPtr p);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr w,StringBuilder b,int n);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr w,StringBuilder b,int n);
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr w,out uint pid);
+ [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr w,uint m,IntPtr a,IntPtr b);
+ static string Text(IntPtr w) { var b=new StringBuilder(8192);GetWindowText(w,b,b.Capacity);return b.ToString(); }
+ public static bool ApproveOnly(string subject) {
+  bool clicked=false;
+  EnumWindows(delegate(IntPtr w,IntPtr p) {
+   uint pid;GetWindowThreadProcessId(w,out pid);
+   try { if(Process.GetProcessById((int)pid).ProcessName!="certutil")return true; }catch { return true; }
+   string text=Text(w);IntPtr yes=IntPtr.Zero;
+   EnumChildWindows(w,delegate(IntPtr c,IntPtr q) {
+    string t=Text(c);text+="\n"+t;var b=new StringBuilder(64);GetClassName(c,b,b.Capacity);
+    if(b.ToString()=="Button" && t.Replace("&","")=="Yes")yes=c;return true;
+   },IntPtr.Zero);
+   if(yes!=IntPtr.Zero && text.Contains(subject)) { SendMessage(yes,0xF5,IntPtr.Zero,IntPtr.Zero);clicked=true;return false; }
+   return true;
+  },IntPtr.Zero);
+  return clicked;
+ }
+}
+'@
+  for($i=0;$i -lt 300;$i++) {
+   if([PR41OwnCertificateConsent]::ApproveOnly($ExpectedSubject)) { return 'own-test-CA-confirmed' }
+   Start-Sleep -Milliseconds 100
+  }
+  throw 'The exact ephemeral test CA consent dialog was not found; no other dialog clicked.'
+ }
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Action Status -DataDirectory $profile -TrustTestCA
+ $consent=Receive-Job -Job $consentJob -Wait
+ Assert ($consent -eq 'own-test-CA-confirmed') 'Native consent did not match this test CA'
+ Remove-Job $consentJob;$consentJob=$null
  Assert ($LASTEXITCODE -eq 0 -and (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Process-only command/test CA import failed'
  $calls=Get-Content (Join-Path $root 'calls.txt')
  $meta=Join-Path $root ('container-'+$state.name+'-app.json')
@@ -117,6 +162,7 @@ public class PR41SyntheticDocker {
  Assert (-not ($later -match '^(stop|run|start|rm)\t')) 'Rejected ownership changed a resource'
  Write-Host 'PASS: native PowerShell 5 start/stop/resume/status; spaces and JSON inspect; private paths/ports/ownership; no reseed/reset; exact test CA import and mismatch refusal.'
 } finally {
+ if ($consentJob) { Stop-Job $consentJob;Remove-Job $consentJob -Force }
  if ($testCA) { foreach ($store in @('Root','My')) { $certificate='Cert:\CurrentUser\'+$store+'\'+$testCA.Thumbprint;if (Test-Path $certificate) { Remove-Item $certificate -Force } } }
  $env:PATH=$oldPath;$env:PR41_NATIVE_ROOT=$oldRoot
  Remove-Item -Recurse -Force -LiteralPath $root
