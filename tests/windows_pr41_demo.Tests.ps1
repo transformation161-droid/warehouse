@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('pr41 native space '+[Guid]::NewGuid().ToString('N'))
 $kit=$env:PR41_KIT
-$oldPath=$env:PATH;$oldRoot=$env:PR41_NATIVE_ROOT
+$oldPath=$env:PATH;$oldRoot=$env:PR41_NATIVE_ROOT;$testCA=$null
 function Assert($condition,$message) { if (-not $condition) { throw $message } }
 function Refuses([scriptblock]$operation,$message) { $failed=$false;try { & $operation } catch {$failed=$true};Assert $failed $message }
 New-Item -ItemType Directory -Path $root | Out-Null
@@ -93,14 +93,27 @@ public class PR41SyntheticDocker {
  Assert (-not ($calls -match 'volume\t(rm|prune)|\t0.0.0.0:|--format.*Config.Labels')) 'Unsafe deletion, bind or inspect template'
  Assert (@($calls | Where-Object {$_ -match '^run\t' -and $_ -match '--env-file\t[^\t]*private profile with spaces\\private\\runtime.env\t'}).Count -eq 1) 'Space-containing private path did not cross native argv intact'
  Assert (@($calls | Where-Object {$_ -match '^exec\t' -and $_ -match "\t-c\timport ssl,json,urllib.request;.*cafile='/tls/ca.crt'"}).Count -eq 2) 'Python probe lost native argument quotes'
+ # The exact owner command including process-only ExecutionPolicy and real CA import.
+ # This ephemeral CI user's certificate is removed by exact thumbprint in finally.
+ $testCA=New-SelfSignedCertificate -Type Custom -Subject 'CN=INSTRAKT PR41 CI TEST CA' -CertStoreLocation Cert:\CurrentUser\My -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -NotAfter (Get-Date).AddDays(1) -KeyExportPolicy NonExportable
+ Export-Certificate -Cert $testCA -FilePath (Join-Path $profile 'private/PR41-Test-CA.cer') | Out-Null
+ $preparedPath=Join-Path $profile 'private/prepared.json'
+ $prepared=Get-Content -Raw $preparedPath | ConvertFrom-Json
+ Refuses { & $script -Action Status -DataDirectory $profile -TrustTestCA } 'Imported mismatched CA'
+ Assert (-not (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Rejected CA changed trust store'
+ $prepared.ca_thumbprint=$testCA.Thumbprint;$prepared | ConvertTo-Json -Depth 5 | Set-Content $preparedPath
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Action Status -DataDirectory $profile -TrustTestCA
+ Assert ($LASTEXITCODE -eq 0 -and (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Process-only command/test CA import failed'
+ $calls=Get-Content (Join-Path $root 'calls.txt')
  $meta=Join-Path $root ('container-'+$state.name+'-app.json')
  $object=Get-Content -Raw $meta | ConvertFrom-Json;$object.Config.Labels.'instrakt.pr41.test'='foreign';$object | ConvertTo-Json -Depth 8 | Set-Content $meta
  $count=$calls.Count
  Refuses { & $script -Action Stop -DataDirectory $profile } 'Stopped a container with a foreign label'
  $later=@(Get-Content (Join-Path $root 'calls.txt') | Select-Object -Skip $count)
  Assert (-not ($later -match '^(stop|run|start|rm)\t')) 'Rejected ownership changed a resource'
- Write-Host 'PASS: native PowerShell 5 start/stop/resume/status; spaces and JSON inspect; private paths/ports/ownership; no reseed/reset or CA import.'
+ Write-Host 'PASS: native PowerShell 5 start/stop/resume/status; spaces and JSON inspect; private paths/ports/ownership; no reseed/reset; exact test CA import and mismatch refusal.'
 } finally {
+ if ($testCA) { foreach ($store in @('Root','My')) { $certificate='Cert:\CurrentUser\'+$store+'\'+$testCA.Thumbprint;if (Test-Path $certificate) { Remove-Item $certificate -Force } } }
  $env:PATH=$oldPath;$env:PR41_NATIVE_ROOT=$oldRoot
  Remove-Item -Recurse -Force -LiteralPath $root
 }

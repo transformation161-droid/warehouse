@@ -136,6 +136,9 @@ if ($Action -eq 'Start') {
 $prepared=Get-Content -Raw -LiteralPath (Join-Path $privateDirectory 'prepared.json') | ConvertFrom-Json
 if ($prepared.app_sha -ne $AppSha -or $prepared.instance -ne $state.instance -or $prepared.origin -ne ('https://'+$state.host+':'+$state.port)) { throw 'Prepared profile mismatch.' }
 if ($TrustTestCA) {
+ $caFile=Join-Path $privateDirectory 'PR41-Test-CA.cer'
+ $publicCA=[Security.Cryptography.X509Certificates.X509Certificate2]::new($caFile)
+ try { if ($publicCA.Thumbprint -ne $prepared.ca_thumbprint) { throw 'Test CA identity mismatch; trust store unchanged.' } } finally { $publicCA.Dispose() }
  $existing=Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq $prepared.ca_thumbprint }
  if (-not $existing) { Import-Certificate -FilePath (Join-Path $privateDirectory 'PR41-Test-CA.cer') -CertStoreLocation Cert:\CurrentUser\Root | Out-Null }
 }
