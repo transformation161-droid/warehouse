@@ -20,7 +20,10 @@ from tools.pr41_demo.package import check
 def run(kit,image):
     kit=Path(kit).resolve();check(kit);ident=uuid4().hex;name='instrakt-pr41-ci-'+ident[:10]
     net=name+'-net';private=name+'-private';pki=name+'-tls';data=name+'-data';pg=name+'-db';app=name+'-app';prep=name+'-prepare';seed=name+'-seed'
-    label='instrakt.pr41.test='+ident;port=unused_port();origin=f'https://127.0.0.1:{port}'
+    label='instrakt.pr41.test='+ident;port=unused_port()
+    # A real private host bind exercises the Android/LAN origin, not only localhost.
+    host=json.loads(docker('network','inspect','bridge',capture_output=True,text=True).stdout)[0]['IPAM']['Config'][0]['Gateway']
+    origin=f'https://{host}:{port}'
     containers=[];volumes=[]
     with tempfile.TemporaryDirectory(prefix='pr41-only-synthetic-') as folder:
         root=Path(folder);copied=root/'private';copied.mkdir()
@@ -40,7 +43,7 @@ def run(kit,image):
             for v in (private,pki,data):invoke('volume','create','--label',label,v);volumes.append(v)
             containers.append(prep)
             invoke('run','--name',prep,'--network','none','--label',label,'--user','0:0',*vol(private,'/private'),*vol(pki,'/tls'),*helper,
-                   '--entrypoint','python',image,'/acceptance/demo.py','prepare','/private','/tls','127.0.0.1',str(port),ident)
+                   '--entrypoint','python',image,'/acceptance/demo.py','prepare','/private','/tls',host,str(port),ident)
             invoke('cp',prep+':/private/.',str(copied))
             credentials=json.loads((copied/'secrets.json').read_text())['accounts'];secret_hash=hashlib.sha256((copied/'secrets.json').read_bytes()).hexdigest()
             containers.append(pg)
@@ -59,7 +62,7 @@ def run(kit,image):
             assert json.loads((copied/'seed-complete.json').read_text())['questions']==22
             containers.append(app)
             invoke('run','-d','--name',app,'--label',label,'--network',net,*limits,'--read-only','--tmpfs','/tmp:rw,nosuid,nodev,size=768m',
-                   '--cap-drop','ALL','--security-opt','no-new-privileges','--env-file',str(copied/'runtime.env'),*vol(pki,'/tls',True),'-p',f'127.0.0.1:{port}:8000',image)
+                   '--cap-drop','ALL','--security-opt','no-new-privileges','--env-file',str(copied/'runtime.env'),*vol(pki,'/tls',True),'-p',f'{host}:{port}:8000',image)
             ca=ssl.create_default_context(cafile=str(copied/'PR41-Test-CA.crt'))
             def app_ready():
                 with httpx.Client(base_url=origin,verify=ca,trust_env=False,timeout=3) as c:
@@ -72,9 +75,12 @@ def run(kit,image):
                         time.sleep(.2)
                 raise AssertionError('Synthetic app HTTPS not ready')
             app_ready()
+            # The controller probes 127 inside the app but must preserve the public Host.
+            probe="import ssl,json,urllib.request; c=ssl.create_default_context(cafile='/tls/ca.crt'); r=urllib.request.Request('https://127.0.0.1:8000/api/health',headers={'Host':'"+host+':'+str(port)+"'}); d=json.load(urllib.request.urlopen(r,context=c,timeout=3)); assert d['backend']=='postgresql'; print(d['build'])"
+            assert invoke('exec',app,'python','-c',probe).stdout.strip()==APP_SHA
             pg_inspect=json.loads(invoke('container','inspect',pg).stdout)[0]
             assert not pg_inspect['HostConfig']['PortBindings']
-            assert json.loads(invoke('container','inspect',app).stdout)[0]['HostConfig']['PortBindings']['8000/tcp'][0]['HostIp']=='127.0.0.1'
+            assert json.loads(invoke('container','inspect',app).stdout)[0]['HostConfig']['PortBindings']['8000/tcp'][0]['HostIp']==host
             with ExitStack() as stack:
                 clients={}
                 for role,a in credentials.items():
@@ -108,7 +114,7 @@ def run(kit,image):
                 with httpx.Client(base_url=origin,trust_env=False,timeout=3) as c:c.get('/api/health')
             except httpx.TransportError:pass
             else:raise AssertionError('Test CA must be explicitly trusted, no TLS bypass')
-            result={'synthetic_only':True,'app_sha':APP_SHA,'real_image_https':True,'private_generated_passwords':True,'actual_logins':3,
+            result={'synthetic_only':True,'app_sha':APP_SHA,'real_image_https':True,'private_lan_https':True,'private_generated_passwords':True,'actual_logins':3,
                     'questions':22,'inventories':4,'photo_acl':True,'pdf_xlsx':True,'no_pg_port':True,'restart_preserved_data':True,'reseed_refused':True,'production_contacted':False}
             print(json.dumps(result,indent=2));return result
         finally:

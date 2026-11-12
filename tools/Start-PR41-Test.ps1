@@ -129,7 +129,7 @@ if ($Action -eq 'Start') {
   Invoke-Docker run -d --pull never --name $app --label $label --network $network --read-only @limits --tmpfs '/tmp:rw,nosuid,nodev,size=768m' --env-file (Join-Path $privateDirectory 'runtime.env') --mount "$tlsMount,readonly" -p "$($state.host):$($state.port):8000" $state.image | Out-Null
  } else { Invoke-Docker start $app | Out-Null }
  $ready=$false
- $probe="import ssl,json,urllib.request; c=ssl.create_default_context(cafile='/tls/ca.crt'); d=json.load(urllib.request.urlopen('https://127.0.0.1:8000/api/health',context=c,timeout=3)); assert d['backend']=='postgresql'; print(d['build'])"
+ $probe="import ssl,json,urllib.request; c=ssl.create_default_context(cafile='/tls/ca.crt'); r=urllib.request.Request('https://127.0.0.1:8000/api/health',headers={'Host':'$($state.host):$($state.port)'}); d=json.load(urllib.request.urlopen(r,context=c,timeout=3)); assert d['backend']=='postgresql'; print(d['build'])"
  for ($n=0;$n -lt 90;$n++) { $value=& docker exec $app python -c $probe 2>$null;if ($LASTEXITCODE -eq 0 -and $value -eq $AppSha) {$ready=$true;break};Start-Sleep -Seconds 1 }
  if (-not $ready) { throw 'Pinned app health/TLS check failed; retain the test resources.' }
 }
