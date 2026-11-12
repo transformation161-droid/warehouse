@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
+from math import ceil
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -57,6 +58,7 @@ def summarize_inventory(lines):
         statement.append({
             "no": i,
             "item": str(original.get("item", "")).strip(),
+            "brand": str(original.get("brand") or "").strip(),
             "sku": (
                 (str(original.get("inventoryNumber") or original.get("sku") or "").strip() +
                  (" / ID " + str(original["sourceId"]).strip()
@@ -102,6 +104,12 @@ def _text(value):
     return "'" + result if result.lstrip().startswith(("=", "+", "@")) else result
 
 
+def _quantity(value):
+    if value is None:return "—"
+    text=format(value,"f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def export_inventory_xlsx(inventory, summary):
     """Excel plan/fact statement; can be printed before or after a count."""
     workbook = Workbook()
@@ -109,28 +117,29 @@ def export_inventory_xlsx(inventory, summary):
     sheet.title = "План-факт"
     site, title, day = (str(inventory.get(k) or "") for k in ("site", "title", "date"))
     sheet.append(["ИНСТРАКТ | Ведомость результатов инвентаризации"])
-    sheet.merge_cells("A1:L1")
+    sheet.merge_cells("A1:N1")
     sheet.append(["Объект", _text(site), "Дата", day, "Документ", _text(title)])
     sheet.append(["Основа оценки", summary["costBasis"]])
-    sheet.merge_cells("B3:L3")
+    sheet.merge_cells("B3:N3")
     sheet.append([])
-    sheet.append(["№", "Наименование", "Инв. № / ID", "Ед.", "Учёт", "Факт",
+    sheet.append(["№", "Наименование", "Бренд", "Инв. № / ID", "Ед.", "Учёт", "Факт",
                   "Отклонение", "Цена закупки, ₽", "План, ₽", "Факт, ₽",
-                  "Недостача, ₽", "Излишек, ₽"])
+                  "Недостача, ₽", "Излишек, ₽", "Статус"])
     for row in summary["rows"]:
         sheet.append([
-            row["no"], _text(row["item"]), _text(row["sku"]), _text(row["unit"]),
+            row["no"], _text(row["item"]), _text(row["brand"]), _text(row["sku"]), _text(row["unit"]),
             float(row["expected"]), float(row["actual"]) if row["actual"] is not None else None,
             float(row["difference"]) if row["difference"] is not None else None,
             float(row["purchasePrice"]), float(row["planValue"]),
             float(row["knownFactValue"]) if row["knownFactValue"] is not None else None,
             float(row["shortageValue"]) if row["shortageValue"] is not None else None,
             float(row["surplusValue"]) if row["surplusValue"] is not None else None,
+            _text(row["status"]),
         ])
     end = len(summary["rows"]) + 6
     sheet.cell(end, 2, "ИТОГО")
-    for col, key in ((9, "plannedPurchaseValue"), (10, "knownFactPurchaseValue"),
-                     (11, "shortagePurchaseValue"), (12, "surplusPurchaseValue")):
+    for col, key in ((10, "plannedPurchaseValue"), (11, "knownFactPurchaseValue"),
+                     (12, "shortagePurchaseValue"), (13, "surplusPurchaseValue")):
         sheet.cell(end, col, float(summary[key]))
     sheet.cell(end + 2, 1, "Проверено")
     sheet.cell(end + 2, 2, summary["checked"])
@@ -138,14 +147,14 @@ def export_inventory_xlsx(inventory, summary):
     sheet.cell(end + 3, 2, summary["unchecked"])
     sheet.cell(end + 4, 1, "Оценка")
     sheet.cell(end + 4, 2, "Предварительные расхождения по закупочной стоимости, НЕ установленный ущерб")
-    sheet.merge_cells(start_row=end + 4, start_column=2, end_row=end + 4, end_column=12)
+    sheet.merge_cells(start_row=end + 4, start_column=2, end_row=end + 4, end_column=14)
     sheet.cell(end + 6, 1, "Проверяющий")
-    sheet.cell(end + 6, 5, "МОЛ")
-    sheet.cell(end + 6, 9, "Утверждающий")
-    sheet.freeze_panes = "E6"
-    sheet.auto_filter.ref = f"A5:L{end-1}"
+    sheet.cell(end + 6, 6, "МОЛ")
+    sheet.cell(end + 6, 10, "Утверждающий")
+    sheet.freeze_panes = "F6"
+    sheet.auto_filter.ref = f"A5:N{end-1}"
     sheet.sheet_view.showGridLines = False
-    for col, width in zip("ABCDEFGHIJKL", [6, 46, 22, 9, 10, 10, 12, 19, 17, 17, 18, 18]):
+    for col, width in zip("ABCDEFGHIJKLMN", [6, 43, 19, 22, 9, 10, 10, 12, 19, 17, 17, 18, 18, 21]):
         sheet.column_dimensions[col].width = width
     navy = PatternFill("solid", fgColor="173B59")
     for row_number in (1, 5):
@@ -156,9 +165,19 @@ def export_inventory_xlsx(inventory, summary):
     for cell in sheet[end]:
         cell.fill = PatternFill("solid", fgColor="E8F1F8")
         cell.font = Font(color="173B59", bold=True)
-    for row in sheet.iter_rows(min_row=6, max_row=end, min_col=8, max_col=12):
+    # Wrap actual text and reserve print height: brand/status must not disappear
+    # behind adjacent populated cells or when long imports are printed.
+    text_widths={2:43,3:19,4:22,5:9,14:21}
+    for row_number in range(6,end):
+        height=1
+        for col,width in text_widths.items():
+            cell=sheet.cell(row_number,col)
+            cell.alignment=Alignment(vertical="top",wrap_text=True)
+            height=max(height,sum(max(1,ceil(len(part)/max(1,int(width*.8)))) for part in str(cell.value or '').split('\n')))
+        sheet.row_dimensions[row_number].height=min(409,15*height+4)
+    for row in sheet.iter_rows(min_row=6, max_row=end, min_col=9, max_col=13):
         for cell in row:
-            cell.number_format = '#,##0.00'
+            cell.number_format = '#,##0.00############' if cell.column==9 else '#,##0.00'
     sheet.row_dimensions[1].height = 30
     sheet.row_dimensions[5].height = 32
     sheet.print_title_rows = "1:5"
@@ -166,6 +185,8 @@ def export_inventory_xlsx(inventory, summary):
     sheet.page_setup.orientation = "landscape"
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
     sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.print_area = f"A1:N{end+6}"
     sheet.print_options.horizontalCentered = True
     out = BytesIO()
     workbook.save(out)
@@ -202,17 +223,18 @@ def export_inventory_pdf(inventory, summary):
         line(summary["costBasis"]),
         Spacer(1, 10),
     ]
-    headings = ["№", "Наименование", "ID/№", "Учёт", "Факт", "Δ",
-                "Цена закупки", "План, ₽", "Факт, ₽", "Недост., ₽", "Излиш., ₽"]
+    headings = ["№", "Наименование", "Бренд", "ID/№", "Ед.", "Учёт", "Факт", "Δ",
+                "Цена закупки", "План, ₽", "Факт, ₽", "Недост., ₽", "Излиш., ₽", "Статус"]
     data = [[line(v) for v in headings]]
     for row in summary["rows"]:
         fmt = lambda number: "—" if number is None else f"{number:,.2f}".replace(",", " ")
-        data.append([line(row["no"]), line(row["item"]), line(row["sku"]),
-                     line(fmt(row["expected"])), line(fmt(row["actual"])),
-                     line(fmt(row["difference"])), line(fmt(row["purchasePrice"])),
+        data.append([line(row["no"]), line(row["item"]), line(row["brand"]), line(row["sku"]), line(row["unit"]),
+                     line(_quantity(row["expected"])), line(_quantity(row["actual"])),
+                     line(_quantity(row["difference"])), line(_quantity(row["purchasePrice"])),
                      line(fmt(row["planValue"])), line(fmt(row["knownFactValue"])),
-                     line(fmt(row["shortageValue"])), line(fmt(row["surplusValue"]))])
-    table = Table(data, colWidths=[22, 170, 75, 39, 39, 38, 70, 70, 70, 75, 75], repeatRows=1, hAlign="LEFT")
+                     line(fmt(row["shortageValue"])), line(fmt(row["surplusValue"])),
+                     line(row["status"])])
+    table = Table(data, colWidths=[22, 122, 66, 58, 26, 35, 35, 34, 58, 61, 61, 66, 66, 65], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F1F8")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),

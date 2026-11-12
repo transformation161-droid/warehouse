@@ -150,7 +150,7 @@ async function processCSV(){
 const originalFindingForm=findingForm;
 findingForm=function(f){
   originalFindingForm(f);
-  const form=$('#finding-form');form.insertAdjacentHTML('beforeend',`<input name="photo" type="hidden" value="${attr(f?.photo||'')}"><input name="evidence" type="hidden" value="${attr(f?.evidence||'')}"><div class="field section-gap"><label>Фото при выявлении</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="photo"></div><div class="field section-gap"><label>Фото-подтверждение устранения (обязательно для закрытия)</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="evidence">${f?.evidence?`<img class="photo-preview" src="${attr(f.evidence)}" alt="Подтверждение устранения">`:''}</div>`);
+  const form=$('#finding-form');form.insertAdjacentHTML('beforeend',`<input name="photo" type="hidden" value="${attr(f?.photo||'')}"><input name="evidence" type="hidden" value="${attr(f?.evidence||'')}"><div class="field section-gap"><label>Фото при выявлении</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="photo"></div><div class="field section-gap"><label>Фото-подтверждение устранения (обязательно для закрытия)</label><input type="file" accept="image/jpeg,image/png,image/webp" data-finding-upload="evidence">${f?.evidence?`<button type="button" class="photo-zoom-trigger" data-action="zoom-photo" aria-label="Увеличить подтверждение устранения"><img class="photo-preview" src="${attr(f.evidence)}" alt="Подтверждение устранения"></button>`:''}</div>`);
   if(f){$('.modal-footer').insertAdjacentHTML('afterbegin',`<button class="btn secondary" data-action="history" data-collection="findings" data-id="${attr(f.id)}">История</button>`)}
   if(f&&ui.role!=='manager'&&f.createdBy!==sessionUser.id){form.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=true);$('[data-action="save-finding"]')?.remove()}
   applyReadPermissions($('#dialog-root'));
@@ -217,7 +217,7 @@ let polling=false;
 setInterval(async()=>{
   if(!sessionUser||!initialized||sending||pending||ui.modal||ui.wizard||polling)return;
   polling=true;
-  try{const state=await api('state');const changed=state.revision!==db.revision||!connected;db=state;connected=true;if(changed)render()}
+  try{const actorId=sessionUser.id;const state=await api('state');if(sessionUser?.id!==actorId||ui.modal||ui.wizard||sending||pending)return;const changed=state.revision!==db.revision||!connected;db=state;connected=true;if(changed)render()}
   catch(error){if(connected){connected=false;render()}}
   finally{polling=false}
 },3000);

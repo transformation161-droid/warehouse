@@ -1,0 +1,89 @@
+name: PR41 isolated Windows acceptance kit
+on:
+  pull_request:
+    branches: [feat/inventory-plan-counting-pg]
+    paths:
+      - tools/Start-PR41-Test.ps1
+      - tools/pr41_demo/**
+      - tests/test_pr41_demo.py
+      - tests/pr41_demo_container.py
+      - tests/windows_pr41_demo.Tests.ps1
+      - docs/PR41_WINDOWS_TEST.md
+      - .github/workflows/pr41-windows-demo.yml
+permissions:
+  contents: read
+jobs:
+  isolated-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m unittest tests.test_pr41_demo -v
+      - run: python -m tools.pr41_demo.package build "$RUNNER_TEMP/PR41-Test-cc0b182"
+      - name: Build exact accepted application, never deploy
+        run: docker build -t instrakt-pr41-test:cc0b182 -f "$RUNNER_TEMP/PR41-Test-cc0b182/app-source/Dockerfile.managed-postgres" "$RUNNER_TEMP/PR41-Test-cc0b182/app-source"
+      - name: Isolated TLS PostgreSQL and actual passwords, reports and restart
+        run: python -u -m tests.pr41_demo_container --kit "$RUNNER_TEMP/PR41-Test-cc0b182" --image instrakt-pr41-test:cc0b182 --output "$RUNNER_TEMP/pr41-demo-result.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr41-demo-self-check
+          path: ${{ runner.temp }}/pr41-demo-result.json
+          retention-days: 14
+  windows-powershell:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m tools.pr41_demo.package build "$env:RUNNER_TEMP\PR41-Test-cc0b182"
+        shell: powershell
+      - name: Windows PowerShell 5 native argv and guards
+        timeout-minutes: 2
+        shell: powershell
+        env:
+          PR41_KIT: ${{ runner.temp }}\PR41 extracted kit
+        run: |
+          python -c "import os,shutil; p=os.path.join(os.environ['RUNNER_TEMP'],'PR41-Test-cc0b182'); shutil.make_archive(p,'zip',p)"
+          $pr41Zip = Join-Path $env:RUNNER_TEMP 'PR41-Test-cc0b182.zip'
+          $pr41Kit = $env:PR41_KIT
+          Expand-Archive -LiteralPath $pr41Zip -DestinationPath $pr41Kit
+          ./tests/windows_pr41_demo.Tests.ps1
+  publish-verified-kit:
+    needs: [isolated-docker,windows-powershell]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m tools.pr41_demo.package build "$RUNNER_TEMP/PR41-Test-cc0b182"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PR41-Test-cc0b182
+          path: ${{ runner.temp }}/PR41-Test-cc0b182/
+          include-hidden-files: true
+          retention-days: 14
+      - uses: actions/download-artifact@v4
+        with:
+          name: PR41-Test-cc0b182
+          path: ${{ runner.temp }}/pr41-downloaded
+      - run: python -m tools.pr41_demo.package check "$RUNNER_TEMP/pr41-downloaded"
