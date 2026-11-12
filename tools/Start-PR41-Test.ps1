@@ -140,7 +140,7 @@ if ($TrustTestCA) {
  $publicCA=[Security.Cryptography.X509Certificates.X509Certificate2]::new($caFile)
  try { if ($publicCA.Thumbprint -ne $prepared.ca_thumbprint) { throw 'Test CA identity mismatch; trust store unchanged.' } } finally { $publicCA.Dispose() }
  $existing=Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq $prepared.ca_thumbprint }
- if (-not $existing) { Import-Certificate -FilePath (Join-Path $privateDirectory 'PR41-Test-CA.cer') -CertStoreLocation Cert:\CurrentUser\Root | Out-Null }
+ if (-not $existing) { Import-Certificate -FilePath (Join-Path $privateDirectory 'PR41-Test-CA.cer') -CertStoreLocation Cert:\CurrentUser\Root -Confirm:$false | Out-Null }
 }
 Write-Host ('TEST ONLY URL: '+$prepared.origin)
 Write-Host ('Application SHA: '+$AppSha+' ; PostgreSQL 17 synthetic; no external DB.')
