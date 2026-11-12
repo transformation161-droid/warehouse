@@ -43,3 +43,5 @@
  .ip-action-caption{display:inline}
  .ksu-photo-lightbox{max-width:96vw;padding:10px}
 }
+/* Notifications contain text only and must not intercept rapid inventory taps. */
+.toast{pointer-events:none}
