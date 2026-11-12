@@ -104,7 +104,8 @@ public class PR41SyntheticDocker {
  Refuses { & $script -Action Status -DataDirectory $profile -TrustTestCA } 'Imported mismatched CA'
  Assert (-not (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Rejected CA changed trust store'
  $prepared.ca_thumbprint=$testCA.Thumbprint;$prepared | ConvertTo-Json -Depth 5 | Set-Content $preparedPath
- Write-Host 'CA check: exact owner command, explicit consent, current-user root only.'
+ Write-Host ('CA check: exact owner command via '+(Get-Command powershell.exe).Source)
+ Write-Host ('CA check: native Docker stub via '+(Get-Command docker).Source)
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Action Status -DataDirectory $profile -TrustTestCA
  Assert ($LASTEXITCODE -eq 0 -and (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Process-only command/test CA import failed'
  $calls=Get-Content (Join-Path $root 'calls.txt')

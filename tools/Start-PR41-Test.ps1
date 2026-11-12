@@ -43,6 +43,7 @@ function Check-Package {
  if ($actual.Count -ne @($manifest.files.PSObject.Properties).Count) { throw 'Unexpected extra files in source-only package.' }
 }
 Check-Package
+Write-Host 'PR41 source package verified.'
 $statePath=Join-Path $directory 'state.json'
 $state=$null
 if (Test-Path -LiteralPath $statePath) {
@@ -54,6 +55,7 @@ if (Test-Path -LiteralPath $statePath) {
 } elseif ((Test-Path -LiteralPath $directory) -and @(Get-ChildItem -Force -LiteralPath $directory).Count) { throw 'Existing non-demo/nonempty folder refused. No overwrite or reset.' }
 if ($ValidateOnly) { Write-Host 'PASS: pinned package and private path/endpoint guards; no Docker call or data change.';return }
 function Invoke-Docker { & docker @args;if ($LASTEXITCODE -ne 0) { throw 'PR41 test operation failed. Retain private files/resources; do not reset production or delete volumes.' } }
+Write-Host 'Checking Docker Linux-container engine...'
 if ((Invoke-Docker info --format '{{.OSType}}') -ne 'linux') { throw 'Docker Desktop must be running in Linux-container mode.' }
 function Resource($kind,$name) {
  $existing=if ($kind -eq 'container') { @(Invoke-Docker ps -a --filter "name=^/${name}$" --format '{{.Names}}') } elseif ($kind -eq 'volume') { @(Invoke-Docker volume ls --filter "name=$name" --format '{{.Name}}') } else { @(Invoke-Docker network ls --filter "name=^${name}$" --format '{{.Name}}') }
@@ -136,12 +138,15 @@ if ($Action -eq 'Start') {
 $prepared=Get-Content -Raw -LiteralPath (Join-Path $privateDirectory 'prepared.json') | ConvertFrom-Json
 if ($prepared.app_sha -ne $AppSha -or $prepared.instance -ne $state.instance -or $prepared.origin -ne ('https://'+$state.host+':'+$state.port)) { throw 'Prepared profile mismatch.' }
 if ($TrustTestCA) {
+ Write-Host 'Checking the exact test CA identity...'
  $caFile=Join-Path $privateDirectory 'PR41-Test-CA.cer'
  $publicCA=[Security.Cryptography.X509Certificates.X509Certificate2]::new($caFile)
  try { if ($publicCA.Thumbprint -ne $prepared.ca_thumbprint) { throw 'Test CA identity mismatch; trust store unchanged.' } } finally { $publicCA.Dispose() }
+ Write-Host 'Checking current-user test CA trust...'
  $existing=Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq $prepared.ca_thumbprint }
  if (-not $existing) {
   # Explicit -TrustTestCA is consent for this exact new CA. -user never changes machine roots.
+  Write-Host 'Installing this test CA in current-user roots only...'
   & (Join-Path $env:SystemRoot 'System32\certutil.exe') -user -f -addstore Root $caFile | Out-Null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path ('Cert:\CurrentUser\Root\'+$prepared.ca_thumbprint))) { throw 'Test CA import failed; TLS verification remains enabled.' }
  }
