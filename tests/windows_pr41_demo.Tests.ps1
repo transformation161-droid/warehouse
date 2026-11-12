@@ -1,5 +1,6 @@
 # Native Windows PowerShell 5 and docker.exe argv; synthetic stub, no daemon/CA changes.
 $ErrorActionPreference='Stop'
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Native CA consent test is restricted to disposable GitHub-hosted Windows VMs.' }
 $root=Join-Path ([IO.Path]::GetTempPath()) ('pr41 native space '+[Guid]::NewGuid().ToString('N'))
 $kit=$env:PR41_KIT
 $oldPath=$env:PATH;$oldRoot=$env:PR41_NATIVE_ROOT;$testCA=$null;$consentJob=$null
@@ -94,7 +95,7 @@ public class PR41SyntheticDocker {
  Assert (@($calls | Where-Object {$_ -match '^run\t' -and $_ -match '--env-file\t[^\t]*private profile with spaces\\private\\runtime.env\t'}).Count -eq 1) 'Space-containing private path did not cross native argv intact'
  Assert (@($calls | Where-Object {$_ -match '^exec\t' -and $_ -match "\t-c\timport ssl,json,urllib.request;.*cafile='/tls/ca.crt'"}).Count -eq 2) 'Python probe lost native argument quotes'
  # The exact owner command including process-only ExecutionPolicy and real CA import.
- # This ephemeral CI user's certificate is removed by exact thumbprint in finally.
+ # Certificate trust is confined to this disposable hosted VM, destroyed after the job.
  Write-Host 'CA check: creating one ephemeral certificate in the CI user store.'
  $testSubject='INSTRAKT PR41 CI '+$state.instance
  $testCA=New-SelfSignedCertificate -Type Custom -Subject ('CN='+$testSubject) -CertStoreLocation Cert:\CurrentUser\My -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -NotAfter (Get-Date).AddDays(1) -KeyExportPolicy NonExportable
@@ -163,7 +164,10 @@ public class PR41OwnCertificateConsent {
  Write-Host 'PASS: native PowerShell 5 start/stop/resume/status; spaces and JSON inspect; private paths/ports/ownership; no reseed/reset; exact test CA import and mismatch refusal.'
 } finally {
  if ($consentJob) { Stop-Job $consentJob;Remove-Job $consentJob -Force }
- if ($testCA) { foreach ($store in @('Root','My')) { $certificate='Cert:\CurrentUser\'+$store+'\'+$testCA.Thumbprint;if (Test-Path $certificate) { Remove-Item $certificate -Force } } }
+ # Deleting protected roots opens a second native consent dialog. The complete hosted
+ # VM (including this test-only user store/key) is destroyed by GitHub after the job.
+ # Never run this consent test on a persistent/self-hosted machine (guard above).
+ if ($testCA) { $testCA.Dispose() }
  $env:PATH=$oldPath;$env:PR41_NATIVE_ROOT=$oldRoot
  Remove-Item -Recurse -Force -LiteralPath $root
 }
