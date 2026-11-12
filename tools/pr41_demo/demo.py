@@ -73,6 +73,7 @@ def prepare(root,pki,host,port,instance,uid=10001,gid=10001):
 
 
 def seed(root):
+    sys.path.insert(0,'/app')  # helper is mounted outside the unchanged application image
     from psycopg.conninfo import conninfo_to_dict,make_conninfo
     import psycopg
     from psycopg.rows import dict_row

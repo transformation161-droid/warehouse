@@ -54,8 +54,13 @@ jobs:
       - name: Windows PowerShell 5 native argv and guards
         shell: powershell
         env:
-          PR41_KIT: ${{ runner.temp }}\PR41-Test-cc0b182
-        run: ./tests/windows_pr41_demo.Tests.ps1
+          PR41_KIT: ${{ runner.temp }}\PR41 extracted kit
+        run: |
+          python -c "import os,shutil; p=os.path.join(os.environ['RUNNER_TEMP'],'PR41-Test-cc0b182'); shutil.make_archive(p,'zip',p)"
+          $pr41Zip = Join-Path $env:RUNNER_TEMP 'PR41-Test-cc0b182.zip'
+          $pr41Kit = $env:PR41_KIT
+          Expand-Archive -LiteralPath $pr41Zip -DestinationPath $pr41Kit
+          ./tests/windows_pr41_demo.Tests.ps1
   publish-verified-kit:
     needs: [isolated-docker,windows-powershell]
     runs-on: ubuntu-latest
