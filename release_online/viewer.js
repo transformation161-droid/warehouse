@@ -2,7 +2,7 @@
 'use strict';
 function isReadOnly(){return sessionUser?.role==='viewer'}
 function roleLabel(){return ui.role==='manager'?'руководитель':ui.role==='viewer'?'Только просмотр':'инспектор'}
-const readActions=new Set(['mobile-toggle','mobile-close','site-detail','sites-back','finding-detail','audit-detail','print-audit','inventory-detail','export-inventory','export-report','print-report','weekly-report','weekly-export','report-xlsx','report-pdf','close-modal','logout']);
+const readActions=new Set(['mobile-toggle','mobile-close','site-detail','sites-back','finding-detail','zoom-photo','audit-detail','print-audit','inventory-detail','export-inventory','export-report','print-report','weekly-report','weekly-export','report-xlsx','report-pdf','close-modal','logout']);
 const viewFilters='[data-visit-filter],[data-audit-filter],[data-issue-filter],[data-inv-filter],[data-report-field]';
 function applyReadPermissions(root=document){
  if(!isReadOnly())return;
