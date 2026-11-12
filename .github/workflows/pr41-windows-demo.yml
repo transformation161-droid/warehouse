@@ -38,7 +38,7 @@ jobs:
           path: ${{ runner.temp }}/pr41-demo-result.json
           retention-days: 14
   windows-powershell:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
