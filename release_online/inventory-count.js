@@ -117,16 +117,34 @@
     const pages=Math.max(1,Math.ceil(filtered.length/pageSize));
     inventoryFilter.page=Math.min(Math.max(1,inventoryFilter.page),pages);
     const slice=filtered.slice((inventoryFilter.page-1)*pageSize,inventoryFilter.page*pageSize);
-    const tr=slice.map(x=>{
-      const status=!hasCount(x)?'Не проверено':x.actual<x.expected?'Недостача':
-         x.actual>x.expected?'Излишек':'Соответствует';
-      return '<tr><td>'+safe(x.inventoryNumber||x.sku||x.sourceId)+'</td><td><strong>'+
-        safe(x.item)+'</strong>'+(x.reason?'<div class="tiny muted">'+safe(x.reason)+'</div>':'')+
-        '</td><td>'+safe(x.expected)+'</td><td>'+(hasCount(x)?safe(x.actual):'—')+
-        '</td><td>'+amount(x.price)+'</td><td>'+status+'</td><td>'+
-        (mayCount?'<button class="link" data-action="ip-count-open" data-id="'+attr(x.id)+'">'+
-          (hasCount(x)?'Изменить':'Проверить')+'</button>':'')+'</td></tr>';
-    }).join('');
+    const statusOf=x=>!hasCount(x)?'Не проверено':Number(x.actual)<Number(x.expected)?'Недостача':
+      Number(x.actual)>Number(x.expected)?'Излишек':'Соответствует';
+    const statusPill=x=>{const status=statusOf(x);return pill(status,
+      status==='Недостача'?'red':status==='Излишек'?'amber':
+      status==='Соответствует'?'green':'neutral')};
+    const quickButtons=x=>!mayCount?'':'<div class="ip-quick-actions" role="group" aria-label="Результат проверки">'+
+      '<button type="button" class="ip-quick-btn ip-quick-ok" data-action="ip-quick-ok" data-id="'+attr(x.id)+'"'+
+      ' aria-label="Подтвердить наличие: '+attr(x.item)+'" title="Наличие: как по учёту">'+icon('check',19)+
+      '<span class="ip-action-caption">В наличии</span></button>'+
+      '<button type="button" class="ip-quick-btn ip-quick-issue" data-action="ip-quick-issue" data-id="'+attr(x.id)+'"'+
+      ' aria-label="Указать отсутствие или расхождение: '+attr(x.item)+'" title="Отсутствие или расхождение">'+
+      '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"'+
+      ' stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M6 18 18 6"/></svg>'+
+      '<span class="ip-action-caption">Расхождение</span></button></div>';
+    const tr=slice.map(x=>'<tr><td>'+safe(x.inventoryNumber||x.sku||x.sourceId)+'</td>'+
+      '<td><strong>'+safe(x.item)+'</strong>'+(x.brand?'<div class="tiny muted">'+safe(x.brand)+'</div>':'')+
+      (x.reason?'<div class="tiny muted">'+safe(x.reason)+'</div>':'')+'</td>'+
+      '<td>'+safe(x.expected)+'</td><td>'+(hasCount(x)?safe(x.actual):'—')+'</td>'+
+      '<td>'+amount(x.price)+'</td><td>'+statusPill(x)+'</td><td>'+quickButtons(x)+'</td></tr>').join('');
+    const mobileCards=slice.map(x=>'<article class="ip-mobile-card"><div class="ip-mobile-head">'+
+      '<div class="ip-mobile-title"><strong>'+safe(x.item)+'</strong>'+
+      '<div class="tiny muted">'+safe(x.brand||'Бренд не указан')+' · № '+safe(x.inventoryNumber||x.sku||x.sourceId||'—')+'</div>'+
+      '</div>'+statusPill(x)+'</div>'+
+      '<div class="ip-mobile-values"><div><small>По учёту</small><strong>'+safe(x.expected)+' '+safe(x.unit||'шт.')+
+      '</strong></div><div><small>По факту</small><strong>'+(hasCount(x)?safe(x.actual):'—')+
+      '</strong></div></div>'+(x.reason?'<div class="tiny muted">'+safe(x.reason)+'</div>':'')+
+      '<div class="ip-mobile-bottom"><span class="tiny muted">Цена: '+amount(x.price)+'</span>'+
+      quickButtons(x)+'</div></article>').join('');
     const html='<div class="notice">'+safe(inv.sourceName)+' · План по закупочной стоимости. '+
       (inv.status==='final'?'Инвентаризация завершена.':'Данные и суммы предварительные.')+'</div>'+
       '<div class="grid grid-4 section-gap">'+
@@ -143,9 +161,10 @@
       '>Не проверено</option><option value="checked"'+(filterState==='checked'?' selected':'')+
       '>Проверено</option><option value="differences"'+(filterState==='differences'?' selected':'')+
       '>Расхождения</option></select></div><button class="btn secondary" data-action="ip-filter-apply">Применить</button></div>'+
-      '<div class="table-wrap"><table class="table"><thead><tr><th>Инв. № / ID</th><th>Наименование</th>'+
-      '<th>Учёт</th><th>Факт</th><th>Закупочная цена</th><th>Статус</th><th></th></tr></thead><tbody>'+
-      tr+'</tbody></table></div><div class="tiny muted">Показано '+slice.length+' из '+filtered.length+
+      '<div class="table-wrap ip-desktop-table"><table class="table"><thead><tr><th>Инв. № / ID</th><th>Наименование</th>'+
+      '<th>Учёт</th><th>Факт</th><th>Закупочная цена</th><th>Статус</th><th>Отметка</th></tr></thead><tbody>'+
+      tr+'</tbody></table></div><div class="ip-mobile-list">'+mobileCards+'</div>'+
+      '<div class="tiny muted">Показано '+slice.length+' из '+filtered.length+
       ' позиций. Страница '+inventoryFilter.page+' из '+pages+'.</div>'+
       (pages>1?'<div class="actions-row section-gap"><button class="btn secondary" data-action="ip-prev-page" '+
         (inventoryFilter.page===1?'disabled':'')+'>Предыдущие 100</button>'+
@@ -169,7 +188,7 @@
     return previous(id);
   };
 
-  function countScreen(lineId){
+  function countScreen(lineId, flagged=false){
     const x=db.inventoryLines.find(x=>x.id===lineId);if(!x)return;
     const inv=db.inventories.find(v=>v.id===x.inventoryId);
     if(!inv||inv.status==='final')return toast('Пересчёт завершён',true);
@@ -178,7 +197,8 @@
       safe(x.unit)+'; цена закупки: '+amount(x.price)+'. Пустое поле = «Не проверено», 0 = «Не найден».</div>'+
       '<div class="form-grid section-gap"><div class="field"><label>Фактическое количество</label>'+
       '<input id="ip-actual" type="number" step="any" min="0" max="100000000" value="'+
-      (hasCount(x)?attr(x.actual):'')+'" placeholder="Не проверено"></div>'+
+      (flagged&&(!hasCount(x)||Number(x.actual)===Number(x.expected))?'0':
+        hasCount(x)?attr(x.actual):'')+'" placeholder="Не проверено"></div>'+
       '<div class="field span2"><label>Комментарий (обязателен при расхождении)</label>'+
       '<textarea id="ip-comment" maxlength="4000">'+safe(x.reason)+'</textarea></div>'+
       '<div class="field span2"><label>Фото (необязательно)</label>'+
@@ -187,7 +207,28 @@
       '</div></div></form>';
     const footer='<button class="btn secondary" data-action="ip-back">Назад</button>'+
       '<button class="btn primary" data-action="ip-save-count" data-id="'+attr(lineId)+'">Сохранить факт</button>';
-    openModal(html,'Пересчёт: '+x.item,nameSite(inv.siteId),true,footer);
+    openModal(html,(flagged?'Отсутствие / расхождение: ':'Пересчёт: ')+x.item,nameSite(inv.siteId),true,footer);
+  }
+  async function quickMatch(lineId){
+    if(!ready())return sizeWarning();
+    const x=db.inventoryLines.find(x=>x.id===lineId);if(!x)return;
+    const inv=db.inventories.find(v=>v.id===x.inventoryId);
+    if(!inv||inv.status==='final'||inv.stage!=='primary'||!allowed())
+      return toast('Позиция недоступна для пересчёта',true);
+    if(hasCount(x)){
+      if(Number(x.actual)!==Number(x.expected))return countScreen(lineId);
+      return toast('Наличие уже подтверждено');
+    }
+    countBusy=true;
+    try{
+      const result=await api('inventory-lines/'+encodeURIComponent(lineId)+'/count',{
+        method:'PATCH',body:JSON.stringify({expectedVersion:x.version,actual:Number(x.expected),reason:'',photo:''}),
+      });
+      db=result.state;render();planScreen(inv.id);toast('Наличие подтверждено');
+    }catch(e){
+      if(e?.status===409){try{db=await api('state');render();planScreen(inv.id)}catch{}}
+      showError(e);
+    }finally{countBusy=false}
   }
   async function saveCount(lineId){
     if(!ready())return sizeWarning();
@@ -248,6 +289,8 @@
     const mode=b.dataset.action,id=b.dataset.id;
     if(mode==='ip-commit')void commitPlan();
     if(mode==='ip-count-open')countScreen(id);
+    if(mode==='ip-quick-ok')void quickMatch(id);
+    if(mode==='ip-quick-issue')countScreen(id,true);
     if(mode==='ip-back'&&activeInventory)planScreen(activeInventory);
     if(mode==='ip-save-count')void saveCount(id);
     if(mode==='ip-finalize')void finalize(id);
