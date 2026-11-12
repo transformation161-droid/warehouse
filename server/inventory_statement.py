@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
+from math import ceil
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -103,6 +104,12 @@ def _text(value):
     return "'" + result if result.lstrip().startswith(("=", "+", "@")) else result
 
 
+def _quantity(value):
+    if value is None:return "—"
+    text=format(value,"f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def export_inventory_xlsx(inventory, summary):
     """Excel plan/fact statement; can be printed before or after a count."""
     workbook = Workbook()
@@ -158,9 +165,19 @@ def export_inventory_xlsx(inventory, summary):
     for cell in sheet[end]:
         cell.fill = PatternFill("solid", fgColor="E8F1F8")
         cell.font = Font(color="173B59", bold=True)
+    # Wrap actual text and reserve print height: brand/status must not disappear
+    # behind adjacent populated cells or when long imports are printed.
+    text_widths={2:43,3:19,4:22,5:9,14:21}
+    for row_number in range(6,end):
+        height=1
+        for col,width in text_widths.items():
+            cell=sheet.cell(row_number,col)
+            cell.alignment=Alignment(vertical="top",wrap_text=True)
+            height=max(height,sum(max(1,ceil(len(part)/max(1,int(width*.8)))) for part in str(cell.value or '').split('\n')))
+        sheet.row_dimensions[row_number].height=min(409,15*height+4)
     for row in sheet.iter_rows(min_row=6, max_row=end, min_col=9, max_col=13):
         for cell in row:
-            cell.number_format = '#,##0.00'
+            cell.number_format = '#,##0.00############' if cell.column==9 else '#,##0.00'
     sheet.row_dimensions[1].height = 30
     sheet.row_dimensions[5].height = 32
     sheet.print_title_rows = "1:5"
@@ -168,6 +185,8 @@ def export_inventory_xlsx(inventory, summary):
     sheet.page_setup.orientation = "landscape"
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
     sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.print_area = f"A1:N{end+6}"
     sheet.print_options.horizontalCentered = True
     out = BytesIO()
     workbook.save(out)
@@ -204,18 +223,18 @@ def export_inventory_pdf(inventory, summary):
         line(summary["costBasis"]),
         Spacer(1, 10),
     ]
-    headings = ["№", "Наименование", "Бренд", "ID/№", "Учёт", "Факт", "Δ",
+    headings = ["№", "Наименование", "Бренд", "ID/№", "Ед.", "Учёт", "Факт", "Δ",
                 "Цена закупки", "План, ₽", "Факт, ₽", "Недост., ₽", "Излиш., ₽", "Статус"]
     data = [[line(v) for v in headings]]
     for row in summary["rows"]:
         fmt = lambda number: "—" if number is None else f"{number:,.2f}".replace(",", " ")
-        data.append([line(row["no"]), line(row["item"]), line(row["brand"]), line(row["sku"]),
-                     line(fmt(row["expected"])), line(fmt(row["actual"])),
-                     line(fmt(row["difference"])), line(fmt(row["purchasePrice"])),
+        data.append([line(row["no"]), line(row["item"]), line(row["brand"]), line(row["sku"]), line(row["unit"]),
+                     line(_quantity(row["expected"])), line(_quantity(row["actual"])),
+                     line(_quantity(row["difference"])), line(_quantity(row["purchasePrice"])),
                      line(fmt(row["planValue"])), line(fmt(row["knownFactValue"])),
                      line(fmt(row["shortageValue"])), line(fmt(row["surplusValue"])),
                      line(row["status"])])
-    table = Table(data, colWidths=[22, 122, 66, 58, 35, 35, 34, 58, 61, 61, 66, 66, 65], repeatRows=1, hAlign="LEFT")
+    table = Table(data, colWidths=[22, 122, 66, 58, 26, 35, 35, 34, 58, 61, 61, 66, 66, 65], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F1F8")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),

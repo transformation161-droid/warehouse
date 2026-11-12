@@ -1,7 +1,9 @@
 /* PR40. Shared inventory plans. No client-side authority over access or totals. */
 'use strict';
 (()=>{
-  let upload=null,preview=null,countBusy=false,activeInventory=null;
+  let upload=null,preview=null,countBusy=false,activeInventory=null,countEdit=null;
+  let busyControls=[],planPosition=null;
+  function rememberPlanPosition(){if(document.querySelector('.ip-mobile-list'))planPosition={id:activeInventory,top:document.querySelector('.modal-body')?.scrollTop||0}}
   let inventoryFilter={id:null,status:'all',query:'',page:1};
   const pageSize=100;
   const mapFields=[['item','Наименование'],['externalId','ID'],['inventoryNumber','Инвентарный №'],
@@ -24,6 +26,55 @@
     return {name:file.name,content:btoa(content)};
   };
   const showError=(error)=>toast(error?.message||'Не удалось выполнить операцию',true);
+
+  function setCountBusy(value){
+    countBusy=value;
+    if(value){
+      busyControls=[...document.querySelectorAll('.modal button,.modal input,.modal select,.modal textarea')].map(node=>[node,node.disabled]);
+      busyControls.forEach(([node])=>{node.disabled=true});
+    }else{busyControls.forEach(([node,disabled])=>{if(node.isConnected)node.disabled=disabled});busyControls=[]}
+  }
+  // Keep an in-flight inventory request attached to its form. No second action,
+  // navigation or Escape may replace that form before the response is handled.
+  document.addEventListener('click',event=>{
+    if(countBusy&&ui.modal&&event.target.closest('[data-action],[data-nav],[data-backdrop]')){
+      event.preventDefault();event.stopImmediatePropagation();sizeWarning();
+    }
+  },true);
+  document.addEventListener('keydown',event=>{
+    if(countBusy&&ui.modal&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();sizeWarning()}
+  },true);
+  async function countError(error){
+    const form=get('ip-count-form');
+    if(!form||!countEdit)return showError(error);
+    let message='Сохранение не подтверждено. Введённые значения и выбранное фото остаются в форме.';
+    if(error?.status===409){
+      countEdit.conflict=true;
+      try{
+        db=await api('state');
+        if(!get('ip-count-feedback')||countEdit.userId!==sessionUser?.id)return;
+        const current=db.inventoryLines.find(x=>x.id===countEdit.lineId);
+        const parent=db.inventories.find(x=>x.id===current?.inventoryId);
+        if(current&&parent?.status==='draft'&&parent.stage==='primary'){
+          message='Конфликт версии. На сервере факт: '+(hasCount(current)?current.actual:'Не проверено')+
+            '; комментарий: '+(current.reason||'—')+'. Ваши значения ниже не отправлены.';
+          get('ip-count-feedback').innerHTML='<p>'+safe(message)+'</p>'+
+            (current.photo?'<button type="button" class="photo-zoom-trigger" data-action="zoom-photo" aria-label="Посмотреть фото на сервере"><img class="photo-preview" src="'+attr(current.photo)+'" alt="Фото текущей версии"></button>':'')+
+            '<button type="button" class="btn secondary" data-action="ip-use-current">Сверить и разрешить повтор</button>';
+        }else get('ip-count-feedback').textContent='Пересчёт закрыт или доступ изменён. Ваш ввод сохранён в форме; запись не выполнена.';
+      }catch{const feedback=get('ip-count-feedback');if(feedback)feedback.textContent='Конфликт версии. Не удалось загрузить актуальные данные. Сохраните копию ввода и вернитесь к таблице.'}
+    }else get('ip-count-feedback').textContent=message+' '+(error?.message||'');
+    const recovery=get('ip-count-recovery');if(recovery)recovery.hidden=false;
+    showError(error);
+  }
+  async function copyCount(){
+    if(!countEdit||!allowed()||countEdit.userId!==sessionUser.id||!get('ip-count-form'))return;
+    const file=get('ip-photo')?.files?.[0];
+    const copy={format:'ksu-inventory-count-recovery-v1',lineId:countEdit.lineId,
+      expectedVersion:countEdit.version,actual:field('ip-actual'),reason:field('ip-comment'),photo:countEdit.photo,
+      ...(file?{attachment:await sourceData(file)}:{})};
+    downloadFile(JSON.stringify(copy,null,2),'instrakt-count-recovery.json','application/json');
+  }
 
   inventoryPlanPreviewModal=function(){
     upload=null;preview=null;
@@ -81,7 +132,7 @@
     if(!ready())return sizeWarning();
     if(!upload||!preview)return toast('Сначала проверьте Excel',true);
     if(!get('inv-plan-form')?.reportValidity())return;
-    const btn=document.querySelector('[data-action="ip-commit"]');btn.disabled=true;countBusy=true;
+    const btn=document.querySelector('[data-action="ip-commit"]');setCountBusy(true);
     try{
       const response=await api('inventory-plan/commit',{method:'POST',body:JSON.stringify({
         ...upload,siteId:field('ip-site'),date:field('ip-date'),title:field('ip-title')})});
@@ -89,7 +140,7 @@
       toast(response.duplicate?'Этот план уже был загружен, дубликат не создан':
         'План создан: '+response.positions+' позиций');
       inventoryDetail(response.inventoryId);
-    }catch(e){showError(e);btn.disabled=false}finally{countBusy=false}
+    }catch(e){showError(e);btn.disabled=false}finally{setCountBusy(false)}
   }
 
   function totals(rows){
@@ -108,7 +159,7 @@
     if(inventoryFilter.id!==id)inventoryFilter={id,status:'all',query:'',page:1};
     const rows=countLines(id);
     const t=totals(rows),completed=rows.length>0&&rows.length===inv.plannedPositions&&t.unchecked===0;
-    const mayCount=allowed()&&inv.status!=='final'&&inv.stage==='primary';
+    const mayCount=allowed()&&inv.status==='draft'&&inv.stage==='primary';
     const mayFinalize=mayCount&&(sessionUser.role==='manager'||inv.createdBy===sessionUser.id);
     const filterState=inventoryFilter.status,query=inventoryFilter.query;
     const filtered=rows.filter(x=>(filterState==='all'||(filterState==='unchecked'?!hasCount(x):
@@ -131,12 +182,12 @@
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"'+
       ' stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M6 18 18 6"/></svg>'+
       '<span class="ip-action-caption">Расхождение</span></button></div>';
-    const tr=slice.map(x=>'<tr><td>'+safe(x.inventoryNumber||x.sku||x.sourceId)+'</td>'+
+    const tr=slice.map(x=>'<tr data-ip-line="'+attr(x.id)+'"><td>'+safe(x.inventoryNumber||x.sku||x.sourceId)+'</td>'+
       '<td><strong>'+safe(x.item)+'</strong>'+(x.brand?'<div class="tiny muted">'+safe(x.brand)+'</div>':'')+
       (x.reason?'<div class="tiny muted">'+safe(x.reason)+'</div>':'')+'</td>'+
       '<td>'+safe(x.expected)+'</td><td>'+(hasCount(x)?safe(x.actual):'—')+'</td>'+
       '<td>'+amount(x.price)+'</td><td>'+statusPill(x)+'</td><td>'+quickButtons(x)+'</td></tr>').join('');
-    const mobileCards=slice.map(x=>'<article class="ip-mobile-card"><div class="ip-mobile-head">'+
+    const mobileCards=slice.map(x=>'<article class="ip-mobile-card" data-ip-line="'+attr(x.id)+'"><div class="ip-mobile-head">'+
       '<div class="ip-mobile-title"><strong>'+safe(x.item)+'</strong>'+
       '<div class="tiny muted">'+safe(x.brand||'Бренд не указан')+' · № '+safe(x.inventoryNumber||x.sku||x.sourceId||'—')+'</div>'+
       '</div>'+statusPill(x)+'</div>'+
@@ -180,30 +231,36 @@
         (completed?'':' disabled')+'>Завершить ('+t.checked+'/'+rows.length+')</button>':'')+
       '<button class="btn secondary" data-action="close-modal">Закрыть</button>';
     openModal(html,inv.title,nameSite(inv.siteId)+' · '+fmtDate(inv.date),true,footer);
+    if(planPosition?.id===id){const body=document.querySelector('.modal-body'),top=planPosition.top;requestAnimationFrame(()=>{if(body?.isConnected)body.scrollTop=top})}
   }
   const previous=inventoryDetail;
   inventoryDetail=function(id){
     const inv=db.inventories.find(x=>x.id===id);
-    if(inv?.sourceHash)return planScreen(id);
+    if(inv?.sourceHash){planPosition=null;return planScreen(id)}
     return previous(id);
   };
 
   function countScreen(lineId, flagged=false){
+    if(!ready())return sizeWarning();
+    if(!allowed())return toast('Нет права пересчёта',true);
     const x=db.inventoryLines.find(x=>x.id===lineId);if(!x)return;
     const inv=db.inventories.find(v=>v.id===x.inventoryId);
-    if(!inv||inv.status==='final')return toast('Пересчёт завершён',true);
+    if(!inv||inv.status!=='draft'||inv.stage!=='primary')return toast('Пересчёт завершён',true);
+    rememberPlanPosition();
     activeInventory=inv.id;
-    const html='<form id="ip-count-form"><div class="notice">Учёт: '+safe(x.expected)+' '+
-      safe(x.unit)+'; цена закупки: '+amount(x.price)+'. Пустое поле = «Не проверено», 0 = «Не найден».</div>'+
+    countEdit={lineId,version:x.version,userId:sessionUser.id,photo:x.photo||'',file:null,conflict:false};
+    const html='<div id="ip-count-feedback" role="status"></div>'+
+      '<div id="ip-count-recovery" hidden><button type="button" class="btn secondary" data-action="ip-count-copy">Скачать введённый пересчёт</button></div>'+ '<form id="ip-count-form"><div class="notice">Учёт: '+safe(x.expected)+' '+
+      safe(x.unit)+'; цена закупки: '+amount(x.price)+'. '+(flagged?'Введите фактическое количество явно. 0 = не найдено.':'Пустое поле = «Не проверено», 0 = не найдено.')+'</div>'+
       '<div class="form-grid section-gap"><div class="field"><label>Фактическое количество</label>'+
       '<input id="ip-actual" type="number" step="any" min="0" max="100000000"'+(flagged?' required':'')+' value="'+
-      (flagged&&(!hasCount(x)||Number(x.actual)===Number(x.expected))?(Number(x.expected)>0?'0':''):
+      (flagged&&(!hasCount(x)||Number(x.actual)===Number(x.expected))?'':
         hasCount(x)?attr(x.actual):'')+'" placeholder="Не проверено"></div>'+
       '<div class="field span2"><label>Комментарий (обязателен при расхождении)</label>'+
       '<textarea id="ip-comment" maxlength="4000">'+safe(x.reason)+'</textarea></div>'+
       '<div class="field span2"><label>Фото (необязательно)</label>'+
       '<input id="ip-photo" type="file" accept="image/png,image/jpeg,image/webp">'+
-      (x.photo?'<div class="tiny muted">Ранее загруженное фото сохранится, если не выбирать новое.</div>':'')+
+      (x.photo?'<div class="tiny muted">Ранее загруженное фото сохранится, если не выбирать новое.</div><button type="button" class="photo-zoom-trigger" data-action="zoom-photo" aria-label="Посмотреть фото пересчёта"><img class="photo-preview" src="'+attr(x.photo)+'" alt="Фото пересчёта"></button>':'')+
       '</div></div></form>';
     const footer='<button class="btn secondary" data-action="ip-back">Назад</button>'+
       '<button class="btn primary" data-action="ip-save-count" data-id="'+attr(lineId)+'">Сохранить факт</button>';
@@ -219,20 +276,22 @@
       if(Number(x.actual)!==Number(x.expected))return countScreen(lineId);
       return toast('Наличие уже подтверждено');
     }
-    countBusy=true;
+    rememberPlanPosition();setCountBusy(true);
     try{
       const result=await api('inventory-lines/'+encodeURIComponent(lineId)+'/count',{
-        method:'PATCH',body:JSON.stringify({expectedVersion:x.version,actual:Number(x.expected),reason:'',photo:''}),
+        method:'PATCH',body:JSON.stringify({expectedVersion:x.version,actual:Number(x.expected),reason:x.reason||'',photo:x.photo||''}),
       });
       db=result.state;render();planScreen(inv.id);toast('Наличие подтверждено');
     }catch(e){
       if(e?.status===409){try{db=await api('state');render();planScreen(inv.id)}catch{}}
       showError(e);
-    }finally{countBusy=false}
+    }finally{setCountBusy(false)}
   }
   async function saveCount(lineId){
     if(!ready())return sizeWarning();
     const x=db.inventoryLines.find(x=>x.id===lineId);if(!x)return;
+    if(!allowed()||!countEdit||countEdit.lineId!==lineId||countEdit.userId!==sessionUser.id)return;
+    if(countEdit.conflict)return toast('Сначала сверьте текущую версию или вернитесь к таблице. Ввод сохранён.',true);
     const form=get('ip-count-form');if(!form?.reportValidity())return;
     const string=field('ip-actual'),actual=string===''?null:Number(string);
     const reason=field('ip-comment').trim();
@@ -240,25 +299,24 @@
     if(actual!==null&&actual!==Number(x.expected)&&!reason)
       return toast('Укажите причину расхождения или комментарий о проверке',true);
     const inv=db.inventories.find(v=>v.id===x.inventoryId);if(!inv)return;
-    const button=document.querySelector('[data-action="ip-save-count"]');if(button)button.disabled=true;
-    countBusy=true;
+    const button=document.querySelector('[data-action="ip-save-count"]');
+    setCountBusy(true);
     try{
-      let photo=x.photo||'',upload=get('ip-photo')?.files?.[0];
-      if(upload){
+      let photo=countEdit.photo,upload=get('ip-photo')?.files?.[0];
+      if(upload&&upload!==countEdit.file){
         if(upload.size>3000000)throw Error('Фото больше 3 МБ');
         const reader=new FileReader();
         const data=await new Promise((resolve,reject)=>{reader.onload=()=>resolve(reader.result);
           reader.onerror=reject;reader.readAsDataURL(upload)});
-        photo=await uploadPhoto(data,inv.siteId);
+        photo=await uploadPhoto(data,inv.siteId);countEdit.photo=photo;countEdit.file=upload;
       }
       const result=await api('inventory-lines/'+encodeURIComponent(lineId)+'/count',{
-        method:'PATCH',body:JSON.stringify({expectedVersion:x.version,actual,reason,photo}),
+        method:'PATCH',body:JSON.stringify({expectedVersion:countEdit.version,actual,reason,photo}),
       });
-      db=result.state;render();planScreen(inv.id);toast('Результат пересчёта сохранён');
+      db=result.state;countEdit=null;render();planScreen(inv.id);toast('Результат пересчёта сохранён');
     }catch(e){
-      if(e?.status===409){try{db=await api('state');render();planScreen(inv.id)}catch{}}
-      showError(e);if(button)button.disabled=false;
-    }finally{countBusy=false}
+      await countError(e);
+    }finally{setCountBusy(false)}
   }
   async function finalize(id){
     if(!ready())return sizeWarning();
@@ -267,13 +325,13 @@
     if(!lines.length||lines.length!==inv.plannedPositions||lines.some(x=>!hasCount(x)))
       return toast('Нельзя завершить: остались непроверенные позиции',true);
     if(!confirm('Завершить инвентаризацию? Результаты пересчёта будут закрыты для изменений.'))return;
-    countBusy=true;
+    setCountBusy(true);
     try{
       const result=await api('inventories/'+encodeURIComponent(id)+'/finalize',{
         method:'POST',body:JSON.stringify({expectedVersion:inv.version}),
       });
       db=result.state;render();planScreen(id);toast('Инвентаризация завершена');
-    }catch(e){showError(e)}finally{countBusy=false}
+    }catch(e){showError(e)}finally{setCountBusy(false)}
   }
 
   document.addEventListener('change',e=>{
@@ -291,19 +349,25 @@
     if(mode==='ip-count-open')countScreen(id);
     if(mode==='ip-quick-ok')void quickMatch(id);
     if(mode==='ip-quick-issue')countScreen(id,true);
-    if(mode==='ip-back'&&activeInventory)planScreen(activeInventory);
+    if(mode==='ip-count-copy')void copyCount().catch(showError);
+    if(mode==='ip-use-current'&&ready()&&countEdit){
+      const current=db.inventoryLines.find(x=>x.id===countEdit.lineId);
+      if(current&&confirm('Вы сверили текущий результат и хотите сохранить свои значения поверх этой версии?')){countEdit.version=current.version;countEdit.conflict=false;get('ip-count-feedback').textContent='Версия сверена. Для записи нажмите «Сохранить факт».'}
+    }
+    if(mode==='ip-back'&&activeInventory){countEdit=null;planScreen(activeInventory)}
     if(mode==='ip-save-count')void saveCount(id);
     if(mode==='ip-finalize')void finalize(id);
     if(mode==='ip-filter-apply'&&activeInventory){
+      planPosition=null;
       inventoryFilter={id:activeInventory,query:field('ip-filter-name').trim().toLowerCase(),
         status:field('ip-filter-status')||'all',page:1};
       planScreen(activeInventory);
     }
     if(mode==='ip-prev-page'&&activeInventory&&inventoryFilter.page>1){
-      inventoryFilter.page--;planScreen(activeInventory);
+      planPosition=null;inventoryFilter.page--;planScreen(activeInventory);
     }
     if(mode==='ip-next-page'&&activeInventory){
-      inventoryFilter.page++;planScreen(activeInventory);
+      planPosition=null;inventoryFilter.page++;planScreen(activeInventory);
     }
   });
 })();

@@ -20,7 +20,7 @@ from server.database import digest
 import server.app as app_module
 
 HOST="http://127.0.0.1:8765"
-SCREEN=Path("browser-acceptance-evidence")
+SCREEN=Path(os.getenv("KSU_BROWSER_EVIDENCE_DIR","browser-acceptance-evidence"))
 
 
 def workbook(count):
@@ -70,13 +70,13 @@ def environment():
     raise RuntimeError("Synthetic test server did not start")
 
 
-def logged_page(browser,token):
-    context=browser.new_context(viewport={"width":1440,"height":950},
+def logged_page(browser,token,device=None):
+    context=browser.new_context(**(device or {"viewport":{"width":1440,"height":950}}),
                                 accept_downloads=True,base_url=HOST)
     context.add_cookies([{"name":"ksu_session","value":token,"url":HOST}])
     page=context.new_page()
     page.goto(HOST,wait_until="domcontentloaded")
-    expect(page.locator("#sync-status")).to_contain_text("синхронизировано",timeout=10000)
+    expect(page.locator("#sync-status")).to_contain_text("Общая база",timeout=10000)
     return context,page
 
 
@@ -103,7 +103,7 @@ def main():
     browser_errors=[]
     try:
         with sync_playwright() as instance:
-            browser=instance.chromium.launch(headless=True)
+            browser=instance.chromium.launch(headless=True,executable_path=os.getenv("CHROMIUM_PATH") or None)
             manager,mp=logged_page(browser,secrets[MANAGER["id"]])
             mp.on("pageerror",lambda e:browser_errors.append("manager: "+str(e)))
             mp.locator('[data-nav="inventory"]').click()
@@ -124,7 +124,7 @@ def main():
             ep.on("pageerror",lambda e:browser_errors.append("inspector: "+str(e)))
             ep.locator('[data-nav="inventory"]').click()
             ep.locator('[data-action="inventory-detail"]').first.click()
-            ep.locator('[data-action="ip-count-open"]').first.click()
+            ep.locator('[data-action="ip-quick-issue"]').first.click()
             ep.locator("#ip-actual").fill("0")
             ep.locator("#ip-comment").fill("Тестовое отсутствие, только синтетические данные")
             ep.locator('[data-action="ip-save-count"]').click()
