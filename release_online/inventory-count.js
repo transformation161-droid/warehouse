@@ -196,8 +196,8 @@
     const html='<form id="ip-count-form"><div class="notice">Учёт: '+safe(x.expected)+' '+
       safe(x.unit)+'; цена закупки: '+amount(x.price)+'. Пустое поле = «Не проверено», 0 = «Не найден».</div>'+
       '<div class="form-grid section-gap"><div class="field"><label>Фактическое количество</label>'+
-      '<input id="ip-actual" type="number" step="any" min="0" max="100000000" value="'+
-      (flagged&&(!hasCount(x)||Number(x.actual)===Number(x.expected))?'0':
+      '<input id="ip-actual" type="number" step="any" min="0" max="100000000"'+(flagged?' required':'')+' value="'+
+      (flagged&&(!hasCount(x)||Number(x.actual)===Number(x.expected))?(Number(x.expected)>0?'0':''):
         hasCount(x)?attr(x.actual):'')+'" placeholder="Не проверено"></div>'+
       '<div class="field span2"><label>Комментарий (обязателен при расхождении)</label>'+
       '<textarea id="ip-comment" maxlength="4000">'+safe(x.reason)+'</textarea></div>'+
