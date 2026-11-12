@@ -95,13 +95,16 @@ public class PR41SyntheticDocker {
  Assert (@($calls | Where-Object {$_ -match '^exec\t' -and $_ -match "\t-c\timport ssl,json,urllib.request;.*cafile='/tls/ca.crt'"}).Count -eq 2) 'Python probe lost native argument quotes'
  # The exact owner command including process-only ExecutionPolicy and real CA import.
  # This ephemeral CI user's certificate is removed by exact thumbprint in finally.
+ Write-Host 'CA check: creating one ephemeral certificate in the CI user store.'
  $testCA=New-SelfSignedCertificate -Type Custom -Subject 'CN=INSTRAKT PR41 CI TEST CA' -CertStoreLocation Cert:\CurrentUser\My -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -NotAfter (Get-Date).AddDays(1) -KeyExportPolicy NonExportable
  Export-Certificate -Cert $testCA -FilePath (Join-Path $profile 'private/PR41-Test-CA.cer') | Out-Null
  $preparedPath=Join-Path $profile 'private/prepared.json'
  $prepared=Get-Content -Raw $preparedPath | ConvertFrom-Json
+ Write-Host 'CA check: mismatch must refuse before changing the root store.'
  Refuses { & $script -Action Status -DataDirectory $profile -TrustTestCA } 'Imported mismatched CA'
  Assert (-not (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Rejected CA changed trust store'
  $prepared.ca_thumbprint=$testCA.Thumbprint;$prepared | ConvertTo-Json -Depth 5 | Set-Content $preparedPath
+ Write-Host 'CA check: exact owner command, explicit consent, current-user root only.'
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Action Status -DataDirectory $profile -TrustTestCA
  Assert ($LASTEXITCODE -eq 0 -and (Test-Path ('Cert:\CurrentUser\Root\'+$testCA.Thumbprint))) 'Process-only command/test CA import failed'
  $calls=Get-Content (Join-Path $root 'calls.txt')

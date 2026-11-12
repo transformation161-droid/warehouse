@@ -52,6 +52,7 @@ jobs:
       - run: python -m tools.pr41_demo.package build "$env:RUNNER_TEMP\PR41-Test-cc0b182"
         shell: powershell
       - name: Windows PowerShell 5 native argv and guards
+        timeout-minutes: 2
         shell: powershell
         env:
           PR41_KIT: ${{ runner.temp }}\PR41 extracted kit
