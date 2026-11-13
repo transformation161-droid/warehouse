@@ -128,6 +128,8 @@ def create_app(path=None, origin=None, secure=None):
         if actor['role']=='viewer' and not getattr(db,'viewer_read_capable',True):
             fail('Для просмотра требуется явное обновление функций чтения на новой PostgreSQL-копии',403)
         if release_policy:release_policy.routes(request.url.path)
+        if request.url.path.startswith('/api/decision-imports') and actor['role']!='manager':
+            fail('Импорт списаний доступен только руководителю',403)
         expected=[request.headers.get('X-KSU-Expected-User')]
         if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
         if any(value and value!=actor['id'] for value in expected):
@@ -673,7 +675,8 @@ def create_app(path=None, origin=None, secure=None):
     install_writeoff_analytics(app,db,auth)
     def make_asset(filename):
         def asset():
-            if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
+            if release_policy and filename in ('decisions.js','calendar.js'):return Response(status_code=404)
+            if release_policy and filename=='writeoff_analytics.js' and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':return Response(status_code=404)
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
     for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
