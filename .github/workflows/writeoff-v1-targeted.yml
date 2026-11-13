@@ -30,4 +30,4 @@ jobs:
       - name: JS parse check
         run: node --check release_online/writeoff_analytics.js
       - name: Focused analytics regressions
-        run: python -m unittest -v tests.test_writeoff_release_v1
+        run: python -m unittest -v tests.test_writeoff_release_v1 tests.test_writeoff_analytics tests.test_decision_import
