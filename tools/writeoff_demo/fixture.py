@@ -34,3 +34,21 @@ def workbook(items=None,custom=False):
     sheet.cell(475,1).fill=PatternFill(fill_type='solid',fgColor='EEEEEE')
     other=book.create_sheet('ДЕМО · Другой лист');other.append(['Не исходный отчёт'])
     output=io.BytesIO();book.save(output);return output.getvalue()
+
+
+def quarter_rows(period):
+    """Invented detailed Q1/Q3 sources for charts; unrelated to the reference workbook."""
+    if period not in ('2026-Q1','2026-Q3'):raise ValueError('Synthetic chart quarter required')
+    result=[]
+    sites=['ДЕМО · Север'] if period=='2026-Q1' else ['ДЕМО · Север','ДЕМО · Юг']
+    for site in sites:
+        for n,(tool,cost,qty) in enumerate([('Перфоратор',60000,3),('Нивелир',40000,2),('Лестница',20000,1)] if period=='2026-Q1' else [('Перфоратор',70000,2),('Нивелир',40000,3),('Лестница',30000,1)]):
+            zero=site=='ДЕМО · Юг';row=rows()[0].copy()
+            row.update(sourceId=f'DEMO-{period}-{len(result)}',document=f'ДЕМО · Акт {period}',site=site,
+                       date='2026-02-12' if period=='2026-Q1' else '2026-09-12',toolType='ДЕМО · '+tool,
+                       quantity=str(0 if zero else qty),cost=str(0 if zero else cost),residual=str(0 if zero else cost//2),
+                       reimbursable=str(0 if zero else cost//4),reimbursed=str(0 if zero else cost//10),
+                       reason=['ДЕМО · Недостача','ДЕМО · Повреждение','ДЕМО · Износ'][n],
+                       decisionType='Найдено' if zero else 'Списание',comment='Вымышленный построчный отчёт для графиков, не исторический агрегат')
+            result.append(row)
+    return result

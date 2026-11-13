@@ -294,7 +294,7 @@ def aggregate(db,actor,q,all_groups=False):
         year=int(p[:4]);quarter=int(p[-1]);return f'{year if quarter>1 else year-1}-Q{quarter-1 if quarter>1 else 4}'
     latest=max((p for _,p in matrix if p),default=None)
     with db.connect(actor) as con:
-        sites=[{'id':r['id'],'name':json.loads(r['data'])['name']} for r in con.execute("select id,data from records where collection='sites'") if not q.site or r['id']==q.site]
+        sites=[{'id':r['id'],'name':json.loads(r['data'])['name']} for r in con.execute("select id,data from records where collection='sites' and (?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=records.id))",(actor['role'],actor['id'])) if not q.site or r['id']==q.site]
     matrix_sites=[]
     for site in sites:
         bucket=groups['sites'].get(site['id']);current=matrix.get((site['id'],latest));prior=matrix.get((site['id'],previous(latest))) if latest else None

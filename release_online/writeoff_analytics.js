@@ -5,10 +5,10 @@
   const METRICS={quantity:'Количество, ед.',cost:'Стоимость, ₽',residual:'Остаточная стоимость, ₽',reimbursable:'К возмещению, ₽',reimbursed:'Возмещено, ₽',inventories:'Инвентаризации по датам',documents:'Документы',decisions:'Строки реестра'};
   const DIMS={reason:'Причина',toolType:'Тип ТМЦ',decisionType:'Тип решения',caseCategory:'Категория',investigation:'Расследование',responsible:'Ответственный / МОЛ'};
   const GROUP_FILTER={sites:'site',periods:'reportPeriod',months:'month',reasons:'reason',tools:'toolType',categories:'caseCategory',decisionTypes:'decisionType',responsibles:'responsible',investigations:'investigation'};
-  const state={owner:'',tab:'writeoffs',filters:{},metric:'cost',page:1,top:10,sort:'value',cache:new Map(),pending:new Set(),errors:new Map(),job:null,busy:false,importOptions:null,documents:[],documentPage:1,comparisonPage:1};
+  const state={owner:'',tab:'writeoffs',filters:{},metric:'cost',page:1,top:10,sort:'value',cache:new Map(),pending:new Set(),errors:new Map(),job:null,busy:false,importOptions:null,documents:[],documentPage:1,comparisonPage:1,chartTop:5,chartHighlight:'',chartSites:null,chartStructure:'reasons'};
   const allowed=()=>sessionUser&&['manager','inspector'].includes(sessionUser.role);
   const money=k=>['cost','residual','reimbursable','reimbursed','outstanding'].includes(k);
-  const format=(v,k)=>v==null?'—':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:money(k)?4:6}).format(Number(v))+(money(k)?' ₽':'');
+  const format=(v,k)=>v==null?'—':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:money(k)?4:6}).format(v)+(money(k)?' ₽':'');
   const value=(m,k)=>m?.[k]?.value??null;
   const btn=(text,action,extra='',primary=false)=>`<button type="button" class="btn ${primary?'primary':'secondary'}" data-wo-action="${action}" ${extra}>${esc(text)}</button>`;
   const option=(v,text,selected)=>`<option value="${attr(v??'')}"${String(v??'')===String(selected??'')?' selected':''}>${esc(text)}</option>`;
@@ -16,7 +16,7 @@
   function identity(){return sessionUser?sessionUser.id+':'+sessionUser.csrf:''}
   function syncOwner(){
     if(state.owner===identity())return;
-    state.owner=identity();state.cache.clear();state.pending.clear();state.errors.clear();state.filters={};state.page=1;state.job=null;state.importOptions=null;state.busy=false;state.documents=[];
+    state.owner=identity();state.cache.clear();state.pending.clear();state.errors.clear();state.filters={};state.page=1;state.job=null;state.importOptions=null;state.busy=false;state.documents=[];state.chartTop=5;state.chartHighlight='';state.chartSites=null;state.chartStructure='reasons';
   }
   function query(site){
     const p=new URLSearchParams();for(const [k,v] of Object.entries({...state.filters,...(site?{site}:{})}))if(v!==''&&v!=null)p.set(k,v);
@@ -48,7 +48,7 @@
   }
   function reload(){state.cache.clear();state.errors.clear();render()}
   function kpis(d){
-    return '<div class="grid grid-4 section-gap">'+['inventories','decisions','documents','quantity','cost','residual','reimbursable','reimbursed'].map(k=>metric(METRICS[k],format(d.totalRows?value(d.metrics,k):null,k),`${d.metrics[k]?.missingRows||0} незаполненных строк`,k==='inventories'?'calendar':'chart')).join('')+'</div>';
+    return '<div class="grid grid-4 section-gap wo-primary-kpis">'+['inventories','decisions','documents','quantity','cost','residual','reimbursable','reimbursed'].map(k=>metric(METRICS[k],format(d.totalRows?value(d.metrics,k):null,k),`${d.metrics[k]?.missingRows||0} незаполненных строк`,k==='inventories'?'calendar':'chart')).join('')+'</div><div class="wo-mobile-kpi-summary">'+['inventories','decisions','documents','reimbursable'].map(k=>'<span>'+esc(METRICS[k])+': <strong>'+format(d.totalRows?value(d.metrics,k):null,k)+'</strong></span>').join('')+'</div>';
   }
   function notices(d){
     const q=d.quality,issues=[];
@@ -62,7 +62,8 @@
   function filters(d,site){
     const f=state.filters,periods=d?.reportPeriods||[],years=[...new Set([...periods.map(p=>p.slice(0,4)),String(new Date().getFullYear()),f.reportYear].filter(Boolean))].sort();
     const year=f.reportYear||f.reportPeriod?.slice(0,4)||years.at(-1),quarters=[1,2,3,4].map(n=>[year+'-Q'+n,year+' · '+n+' квартал']);
-    return `<section class="card section-gap"><div class="filterbar">${site?'':select('site','Объект',db.sites.map(s=>[s.id,s.name]),f.site)}${select('reportYear','Отчётный год',years.map(y=>[y,y]),f.reportYear)}${select('reportPeriod','Отчётный квартал',quarters,f.reportPeriod)}${['start','end'].map((k,i)=>`<div class="field"><label>Дата акта ${i?'по':'с'}</label><input type="date" data-wo-filter="${k}" value="${attr(f[k]||'')}"></div>`).join('')}${Object.entries(DIMS).map(([k,label])=>select(k,label,(d?.facets[k]?.values||[]).filter(v=>v!=null).map(v=>[v,v]),f[k])).join('')}<div class="field"><label>Поиск по реестру</label><input type="search" data-wo-filter="q" value="${attr(f.q||'')}" maxlength="200" placeholder="Документ, ТМЦ, комментарий"></div>${btn('Сбросить','clear')}${btn('Обновить','reload')}</div><p class="tiny muted">Основная динамика — отчётный квартал, выбранный при импорте. Месяцы и интервал выше — исходные даты актов.</p>${f.month||f.documentId?`<div class="notice">Дополнительный срез: ${esc(f.month||f.documentId)}. Кнопка «Сбросить» снимает все фильтры.</div>`:''}</section>`;
+    const advanced=Object.entries(f).some(([k,v])=>v&& !['site','reportYear','reportPeriod'].includes(k));
+    return `<section class="card section-gap wo-filters"><div class="filterbar">${site?'':select('site','Объект',db.sites.map(s=>[s.id,s.name]),f.site)}${select('reportYear','Отчётный год',years.map(y=>[y,y]),f.reportYear)}${select('reportPeriod','Отчётный квартал',quarters,f.reportPeriod)}${btn('Сбросить','clear')}${btn('Обновить','reload')}</div><details data-wo-filter-details${advanced?' open':''}><summary>Все фильтры${advanced?' · применены дополнительные условия':''}</summary><div class="filterbar section-gap">${['start','end'].map((k,i)=>`<div class="field"><label>Дата акта ${i?'по':'с'}</label><input type="date" data-wo-filter="${k}" value="${attr(f[k]||'')}"></div>`).join('')}${Object.entries(DIMS).map(([k,label])=>select(k,label,(d?.facets[k]?.values||[]).filter(v=>v!=null).map(v=>[v,v]),f[k])).join('')}<div class="field"><label>Поиск по реестру</label><input type="search" data-wo-filter="q" value="${attr(f.q||'')}" maxlength="200" placeholder="Документ, ТМЦ, комментарий"></div></div></details><p class="tiny muted wo-filter-note">Основная динамика — отчётный квартал. Интервал дат актов — в дополнительных фильтрах.</p>${f.month||f.documentId?`<div class="notice">Дополнительный срез: ${esc(f.month||f.documentId)}. «Сбросить» снимает все фильтры.</div>`:''}</section>`;
   }
   function matrix(d){
     const periods=d.matrixPeriods,lookup=new Map(d.matrix.map(x=>[x.siteId+'|'+x.period,x.metrics]));
@@ -70,7 +71,7 @@
       const av=state.sort==='value'?value(a.metrics,state.metric):a.delta,bv=state.sort==='value'?value(b.metrics,state.metric):b.delta;
       return av==null?bv==null?a.name.localeCompare(b.name,'ru'):1:bv==null?-1:(Number(bv)-Number(av))*(state.sort==='decrease'?-1:1);
     });
-    return `<section class="card section-gap"><div class="card-title-row"><div><div class="card-title">Динамика объектов</div><div class="card-subtitle">Все ${sites.length} объектов. «—» — нет загруженных данных; 0 — подтверждённый ноль. Δ к предыдущему календарному кварталу.</div></div></div><div class="filterbar"><div class="field"><label>Показатель</label><select data-wo-metric>${Object.entries(METRICS).map(([k,v])=>option(k,v,state.metric)).join('')}</select></div><div class="field"><label>Сортировка</label><select data-wo-sort>${[['value','По величине'],['growth','По росту'],['decrease','По снижению']].map(([k,v])=>option(k,v,state.sort)).join('')}</select></div><div class="field"><label>Диаграммы</label><select data-wo-top>${[[10,'Топ-10'],[20,'Топ-20'],[0,'Все группы']].map(([k,v])=>option(k,v,state.top)).join('')}</select></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Объект</th>${periods.map(p=>`<th>${esc(p)}</th>`).join('')}<th>Всего</th><th>Δ / %</th><th>Тренд</th></tr></thead><tbody>${sites.map(s=>`<tr><td><button class="link" data-wo-site="${attr(s.id)}">${esc(s.name)}</button></td>${periods.map(p=>`<td><button class="link" data-wo-cross="site" data-wo-value="${attr(s.id)}" data-wo-period="${attr(p)}">${format(value(lookup.get(s.id+'|'+p),state.metric),state.metric)}</button></td>`).join('')}<td>${format(value(s.metrics,state.metric),state.metric)}</td><td title="${attr((s.previousPeriod||'')+' → '+(s.currentPeriod||''))}">${format(s.delta,state.metric)}${s.deltaPercent==null?'':` / ${esc(s.deltaPercent)}%`}</td><td>${s.delta==null?'—':Number(s.delta)>0?'↗':Number(s.delta)<0?'↘':'→'}</td></tr>`).join('')}</tbody></table></div></section>`;
+    return `<section class="card section-gap"><div class="card-title-row"><div><div class="card-title">Динамика объектов</div><div class="card-subtitle">Все ${sites.length} объектов. «—» — нет загруженных данных; 0 — подтверждённый ноль. Δ к предыдущему календарному кварталу.</div></div></div><div class="filterbar"><div class="field"><label>Сортировка</label><select data-wo-sort>${[['value','По величине'],['growth','По росту'],['decrease','По снижению']].map(([k,v])=>option(k,v,state.sort)).join('')}</select></div><div class="field"><label>Диаграммы</label><select data-wo-top>${[[10,'Топ-10'],[20,'Топ-20'],[0,'Все группы']].map(([k,v])=>option(k,v,state.top)).join('')}</select></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Объект</th>${periods.map(p=>`<th>${esc(p)}</th>`).join('')}<th>Всего</th><th>Δ / %</th><th>Тренд</th></tr></thead><tbody>${sites.map(s=>`<tr><td><button class="link" data-wo-site="${attr(s.id)}">${esc(s.name)}</button></td>${periods.map(p=>`<td><button class="link" data-wo-cross="site" data-wo-value="${attr(s.id)}" data-wo-period="${attr(p)}">${format(value(lookup.get(s.id+'|'+p),state.metric),state.metric)}</button></td>`).join('')}<td>${format(value(s.metrics,state.metric),state.metric)}</td><td title="${attr((s.previousPeriod||'')+' → '+(s.currentPeriod||''))}">${format(s.delta,state.metric)}${s.deltaPercent==null?'':` / ${esc(s.deltaPercent)}%`}</td><td>${s.delta==null?'—':Number(s.delta)>0?'↗':Number(s.delta)<0?'↘':'→'}</td></tr>`).join('')}</tbody></table></div></section>`;
   }
   function barsGroup(d,group,label){
     const all=d.charts[group]?.items||[],items=state.top?all.slice(0,state.top):all;
@@ -83,8 +84,10 @@
     return `<section class="card section-gap"><div class="card-title">Возмещения и незакрытые случаи</div><p class="small">Назначено ${format(value(d.metrics,'reimbursable'),'cost')}; получено ${format(value(d.metrics,'reimbursed'),'cost')}. Невозмещённый остаток по строкам с обоими полями: ${format(value(d.metrics,'outstanding'),'cost')}. Это не утверждённый долг; взаимозачёт разных строк не выполняется.</p><div class="actions-row">${btn('Не заполнено назначение','coverage','data-wo-field="reimbursable"')}${btn('Не заполнен факт','coverage','data-wo-field="reimbursed"')}</div></section>`;
   }
   function analytics(site){
-    const {data:d,error}=dataset(site);
-    return `<div data-wo-panel>${filters(d,site)}${error?`<div class="notice warn">${esc(error)} ${btn('Повторить','reload')}</div>`:!d?'<div class="card section-gap">Загружаем аналитику…</div>':kpis(d)+notices(d)+matrix(d)+`<div class="grid grid-2">${Object.entries({periods:'Отчётные кварталы',months:'Месяцы по датам актов',sites:'Объекты',reasons:'Причины списаний',tools:'Типы ТМЦ',categories:'Категории случаев',decisionTypes:'Типы решений',responsibles:'Ответственные / МОЛ',investigations:'Статус расследования'}).map(([k,v])=>barsGroup(d,k,v)).join('')}</div>`+recovery(d)+registry(d)}</div>`;
+    const {data:d,error}=dataset(site),workspace=document.querySelector('.workspace'),style=workspace?getComputedStyle(workspace):null;
+    const available=workspace?workspace.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight):Math.min(1100,innerWidth-32);
+    const width=Math.max(300,(available-(innerWidth>900?16:0))/(innerWidth>900?2:1)-40);
+    return `<div data-wo-panel>${filters(d,site)}${error?`<div class="notice warn">${esc(error)} ${btn('Повторить','reload')}</div>`:!d?'<div class="card section-gap">Загружаем аналитику…</div>':(site?'':kpis(d))+window.WriteoffCharts.render(d,{metric:state.metric,top:state.chartTop,highlight:state.chartHighlight,sites:state.chartSites,structure:state.chartStructure,site,width,structureWidth:site?width:Math.max(300,available-40)})+(site?kpis(d):'')+notices(d)+matrix(d)+`<details class="wo-detail-charts"><summary>Дополнительные разрезы: даты актов, категории, решения и ответственные</summary><div class="grid grid-2">${Object.entries({months:'Месяцы по датам актов',categories:'Категории случаев',decisionTypes:'Типы решений',responsibles:'Ответственные / МОЛ',investigations:'Статус расследования'}).map(([k,v])=>barsGroup(d,k,v)).join('')}</div></details>`+recovery(d)+registry(d)}</div>`;
   }
   const baseReports=renderReports;
   renderReports=function(){
@@ -110,7 +113,17 @@
   const baseOverview=renderOverview;
   renderOverview=function(){const html=baseOverview();return allowed()?replaceInventoryStats(html):html};
   const baseSites=renderSites;
-  renderSites=function(){const html=baseSites();return allowed()&&ui.siteId?replaceInventoryStats(html,ui.siteId)+heading('Аналитика списаний объекта','Те же расчёты, фильтры и права доступа, что в общем отчёте')+analytics(ui.siteId):html};
+  renderSites=function(){
+    const html=baseSites();if(!allowed()||!ui.siteId)return html;
+    const root=document.createElement('div');root.innerHTML=replaceInventoryStats(html,ui.siteId);
+    const block=document.createElement('div');block.innerHTML=analytics(ui.siteId);
+    const visuals=document.createElement('div');visuals.className='wo-site-visuals';visuals.innerHTML=heading('Аналитика списаний объекта','Те же расчёты, фильтры и права доступа, что в общем отчёте');
+    for(const node of [block.querySelector('.wo-filters'),block.querySelector('#wo-charts')])if(node)visuals.append(node);
+    const summary=root.querySelector('.grid.grid-4');
+    if(summary)summary.after(visuals);else root.append(visuals);
+    // Contacts, findings and inspection history stay ahead of the long analytic registry.
+    root.append(block);return root.innerHTML;
+  };
 
   // Dialog HTML is kept in ui.modal so the existing sync renderer cannot reset edits.
   function feedback(html,bad=false){
@@ -213,6 +226,7 @@
     });
   }
   document.addEventListener('click',event=>{
+    const structure=event.target.closest('[data-wo-chart-structure]');if(structure&&allowed()){state.chartStructure=structure.dataset.woChartStructure;render();return}
     const el=event.target.closest('[data-wo-action],[data-wo-tab],[data-wo-site],[data-wo-cross]');if(!el||!allowed())return;
     if(el.dataset.woTab){state.tab=el.dataset.woTab;render();return}
     if(el.dataset.woSite){navTo('sites',el.dataset.woSite);return}
@@ -258,9 +272,14 @@
       }
     });
   });
+  let resizeFrame=0;
+  window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{if(allowed()&&!ui.modal&&(ui.page==='reports'||ui.page==='sites'&&ui.siteId))render()})});
   document.addEventListener('change',event=>{
     const el=event.target;if(!allowed())return;
     if(el.matches('[data-wo-filter]')){const k=el.dataset.woFilter;state.filters[k]=el.value;delete state.filters[k+'Missing'];if(k==='reportYear')delete state.filters.reportPeriod;if(k==='reportPeriod'&&el.value)state.filters.reportYear=el.value.slice(0,4);state.page=1;reload()}
+    if(el.matches('[data-wo-chart-top]')){state.chartTop=Number(el.value);render()}
+    if(el.matches('[data-wo-chart-highlight]')){state.chartHighlight=el.value;render()}
+    if(el.matches('[data-wo-chart-site]')){state.chartSites=[...document.querySelectorAll('[data-wo-chart-site]:checked')].map(s=>s.dataset.woChartSite);render()}
     if(el.matches('[data-wo-metric]')){state.metric=el.value;reload()}
     if(el.matches('[data-wo-sort]')){state.sort=el.value;render()}
     if(el.matches('[data-wo-top]')){state.top=Number(el.value);render()}

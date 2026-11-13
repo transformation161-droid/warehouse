@@ -128,24 +128,27 @@ def seed(root):
     # Preserve one legacy inventory, while the new module reads only write-off facts.
     with db.connect(manager) as con:
         save_record(con,manager,'inventories','demo-legacy-inventory',{'siteId':'demo-north','date':'2026-11-12','title':'ДЕМО · Сохранённый пересчёт'},0)
-    from fixture import workbook
+    from fixture import workbook,quarter_rows
     from server.decision_import import Jobs,read_meta,write_meta,inspect,preview,commit
     from server.models import DecisionPreview
     jobs=Jobs(db)
     try:
-        folder=jobs.create(manager,'DEMO-writeoffs.xlsx');data=workbook();(folder/'source.xlsx').write_bytes(data)
-        meta=read_meta(folder);meta.update(sha256=hashlib.sha256(data).hexdigest(),bytes=len(data));write_meta(folder,meta);inspect(folder)
-        meta=read_meta(folder);meta['settings']=DecisionPreview(reportPeriod='2026-Q2',siteAliases={'ДЕМО · Север':'demo-north','ДЕМО · Юг':'demo-south'},aliasesConfirmed=True).model_dump();write_meta(folder,meta)
-        preview(folder,db)
-        if read_meta(folder)['status']!='ready':raise ValueError('Synthetic source rejected')
-        commit(folder,db)
-        if read_meta(folder)['status']!='done':raise ValueError('Synthetic import did not commit')
-        (Path(root)/'DEMO-writeoffs.xlsx').write_bytes(data)
+        for report_period in ('2026-Q2','2026-Q1','2026-Q3'):
+            data=workbook() if report_period=='2026-Q2' else workbook(quarter_rows(report_period))
+            name='DEMO-writeoffs.xlsx' if report_period=='2026-Q2' else 'DEMO-'+report_period+'.xlsx'
+            folder=jobs.create(manager,name);(folder/'source.xlsx').write_bytes(data)
+            meta=read_meta(folder);meta.update(sha256=hashlib.sha256(data).hexdigest(),bytes=len(data));write_meta(folder,meta);inspect(folder)
+            meta=read_meta(folder);meta['settings']=DecisionPreview(reportPeriod=report_period,siteAliases={'ДЕМО · Север':'demo-north','ДЕМО · Юг':'demo-south'},aliasesConfirmed=True).model_dump();write_meta(folder,meta)
+            preview(folder,db)
+            if read_meta(folder)['status']!='ready':raise ValueError('Synthetic source rejected')
+            commit(folder,db)
+            if read_meta(folder)['status']!='done':raise ValueError('Synthetic import did not commit')
+            (Path(root)/name).write_bytes(data)
     finally:jobs.close()
     for role in ('admin','runtime','backup'):preflight(dsn('ksu_'+role),role)
-    result={'format':FORMAT,'app_sha':APP_SHA,'instance':info['instance'],'synthetic_only':True,'seeded':True,'accounts':3,'questions':22,'inventories':1,'writeoff_rows':39}
+    result={'format':FORMAT,'app_sha':APP_SHA,'instance':info['instance'],'synthetic_only':True,'seeded':True,'accounts':3,'questions':22,'inventories':1,'writeoff_rows':48,'quarters':3}
     atomic(Path(root)/'seed-complete.json',result)
-    return {'seeded':True,'accounts':3,'inventories':1,'writeoff_rows':39,'questions':22,'synthetic_only':True}
+    return {'seeded':True,'accounts':3,'inventories':1,'writeoff_rows':48,'quarters':3,'questions':22,'synthetic_only':True}
 
 
 if __name__=='__main__':

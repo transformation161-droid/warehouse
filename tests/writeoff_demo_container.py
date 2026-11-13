@@ -89,17 +89,19 @@ def run(kit,image):
                     c.headers['X-CSRF-Token']=r.json()['csrf'];clients[role]=c
                 manager=clients['manager'];field=clients['inspector'];viewer=clients['viewer']
                 state=manager.get('/api/state').json();assert len(state['sites'])==2 and len(state['questions'])==22 and len(state['inventories'])==1
-                panel=manager.get('/api/writeoff-analytics').json();assert panel['totalRows']==39 and panel['metrics']['quantity']['value']=='56'
-                assert panel['metrics']['cost']['value']=='356787.50'
-                assert field.get('/api/writeoff-analytics').json()['totalRows']==20
+                panel=manager.get('/api/writeoff-analytics').json();assert panel['totalRows']==48 and panel['metrics']['quantity']['value']=='68'
+                assert panel['metrics']['cost']['value']=='616787.50'
+                assert field.get('/api/writeoff-analytics').json()['totalRows']==26
                 assert viewer.get('/api/writeoff-analytics').status_code==403
-                assert manager.get('/api/writeoff-analytics?reportPeriod=2026-Q1').json()['totalRows']==0
+                assert manager.get('/api/writeoff-analytics?reportPeriod=2026-Q1').json()['totalRows']==3
                 for ext in ('csv','xlsx'):
                     response=manager.get('/api/writeoff-analytics/export/rows.'+ext);assert response.status_code==200
+                assert manager.get('/api/writeoff-analytics?reportPeriod=2026-Q2').json()['totalRows']==39
+                assert manager.get('/writeoff_charts.js').status_code==200 and manager.get('/writeoff_charts.css').status_code==200
                 html=manager.get('/').text;assert 'writeoff_analytics.js' in html
                 assert manager.get('/writeoff_analytics.js').status_code==200
                 invoke('stop',app,pg);invoke('start',pg);pg_ready();invoke('start',app);app_ready()
-                assert manager.get('/api/writeoff-analytics').json()['totalRows']==39
+                assert manager.get('/api/writeoff-analytics').json()['totalRows']==48
                 retry=seed_args.copy();retry[retry.index(seed)]=name+'-forbidden-reseed';containers.append(name+'-forbidden-reseed')
                 assert invoke(*retry,check=False).returncode!=0
                 assert manager.get('/api/state').json()['inventories']==state['inventories']
@@ -109,7 +111,7 @@ def run(kit,image):
             except httpx.TransportError:pass
             else:raise AssertionError('Test CA must be explicitly trusted, no TLS bypass')
             result={'synthetic_only':True,'app_sha':APP_SHA,'real_image_https':True,'private_lan_https':True,'private_generated_passwords':True,'actual_logins':3,
-                    'questions':22,'inventories':1,'writeoff_rows':39,'viewer_analytics_denied':True,'csv_xlsx':True,'no_pg_port':True,'restart_preserved_data':True,'reseed_refused':True,'production_contacted':False}
+                    'questions':22,'inventories':1,'writeoff_rows':48,'quarters':3,'viewer_analytics_denied':True,'csv_xlsx':True,'no_pg_port':True,'restart_preserved_data':True,'reseed_refused':True,'production_contacted':False}
             print(json.dumps(result,indent=2));return result
         finally:
             for c in reversed(containers):invoke('rm','-f',c,check=False)
