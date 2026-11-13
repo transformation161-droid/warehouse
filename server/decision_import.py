@@ -105,7 +105,7 @@ def normalize(number, cells, mapping, sites, date1904):
                 if len(value)>40 or cell.get('type')=='b':raise ValueError('Некорректное число')
                 amount=Decimal(value.replace('\u00a0','').replace(' ','').replace(',','.'))
                 scale=6 if field=='quantity' else 4
-                if not amount.is_finite() or amount<0 or (field=='quantity' and amount==0) or abs(amount)>Decimal('1000000000000') or amount.as_tuple().exponent < -scale:
+                if not amount.is_finite() or amount<0 or abs(amount)>Decimal('1000000000000') or amount.as_tuple().exponent < -scale:
                     raise ValueError('Число выходит за безопасные пределы точности или размера')
                 result[field]=format(amount,'f')
             else:
@@ -166,6 +166,7 @@ def preview(folder, db):
                 processed+=1
                 record,row_errors=normalize(number,cells,mapping,sites,reader.date1904)
                 if record is None:empty+=1;continue
+                if settings.get('reportPeriod'):record['reportPeriod']=settings['reportPeriod']
                 cell_errors=[]
                 for field,col in mapping.items():
                     cell=cells.get(col,{})
@@ -196,7 +197,7 @@ def preview(folder, db):
                     if shutil.disk_usage(folder).free<256*1024*1024:raise Rejected('Недостаточно свободного места для безопасного импорта')
             con.commit()
         signature=hashlib.sha256(json.dumps({'sha256':meta['sha256'],'sheet':settings['sheet'],'firstRow':settings['firstRow'],
-                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'profile':'decisions-v1'},sort_keys=True).encode()).hexdigest()
+                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'reportPeriod':settings.get('reportPeriod',''),'profile':'decisions-v1'},sort_keys=True).encode()).hexdigest()
         meta.update(status='ready' if accepted and not rejected else 'invalid',signature=signature,missing=[],processed=processed,
                     accepted=accepted,rejected=rejected,skipped=empty,normalizedBytes=size,errors=errors,rows=samples,
                     formulaCells=formula_count,warning='Использованы сохранённые Excel значения; их актуальность не пересчитывается' if formula_count else '')
