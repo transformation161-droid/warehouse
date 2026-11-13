@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi import HTTPException,Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from pydantic import BaseModel,ConfigDict,Field,ValidationError,model_validator
+from pydantic import BaseModel,ConfigDict,Field,ValidationError,model_validator,field_validator
 from openpyxl import Workbook
 from openpyxl.worksheet._writer import WorksheetWriter,ALL_TEMP_FILES
 from .decision_import import FIELDS
@@ -28,10 +28,10 @@ FINANCE=('quantity','cost','residual','reimbursable','reimbursed','outstanding')
 NUMBER_MAX=Decimal('1000000000000')
 SNAPSHOT_ENCODE=json.JSONEncoder(ensure_ascii=False,separators=(',',':')).encode
 DIMENSIONS=('toolType','reason','decisionType','responsible','investigation','caseCategory')
-GROUPS={'periods':'Отчётные кварталы','months':'Месяцы по дате акта','sites':'Объекты','reasons':'Причины','tools':'Инструменты','categories':'Категории'}
-PROVISIONAL='Предварительная аналитика. Не официальная отчётность: бизнес-ключ документов и исторические пересечения требуют проверки владельцем процесса.'
+GROUPS={'decisionTypes':'Типы решений','responsibles':'Ответственные / МОЛ','investigations':'Расследования','periods':'Отчётные кварталы','months':'Месяцы по дате акта','sites':'Объекты','reasons':'Причины','tools':'Инструменты','categories':'Категории'}
+PROVISIONAL='Предварительная аналитика. Не официальная отчётность; по загруженным построчным отчётам. Незагруженные периоды — нет данных. Суммы возмещений требуют сверки первичных документов.'
 DEFINITIONS={
- 'inventories':{'label':'Инвентаризации по датам актов','unit':'событий','definition':'Число уникальных сочетаний объекта и даты акта. Несколько актов за один день считаются одним событием; при нескольких отдельных инвентаризациях в один день показатель требует уточнения.'},
+ 'inventories':{'label':'Инвентаризации по датам актов','unit':'событий','definition':'По уникальным датам актов, скорректированным при наличии подтверждённых исключений: сочетание siteId и даты. Несколько актов за один день считаются одним событием; при нескольких отдельных инвентаризациях в один день показатель требует уточнения.'},
  'documents':{'label':'Документы','unit':'док.','definition':'Число различных логических документов, имеющих хотя бы одну действующую строку в выбранном срезе. Импорты объединены только явно подтверждёнными исправлениями. Не число уникальных названий или файлов; бизнес-идентичность ещё требует проверки.'},
  'decisions':{'label':'Действующие решения','unit':'строк','definition':'Число действующих строк реестра, прошедших все фильтры. Одна строка источника считается одним результатом решения, а не отдельным юридическим актом.'},
  'quantity':{'label':'Количество по источнику','unit':'ед.','definition':'Точная сумма заполненного поля «Кол-во», без округления. Единицы неоднородны и источником не нормированы. Дробные количества требуют проверки источника, но не признаются ошибкой автоматически.'},
@@ -61,6 +61,8 @@ class Query(BaseModel):
     caseCategoryMissing: bool=False
     dateMode: Literal['all','dated','missing']='all'
     month: str=Field(default='',pattern=r'^$|^[0-9]{4}-(0[1-9]|1[0-2])$')
+    reportYear: int|None=Field(default=None,ge=1900,le=2200)
+    q: str=Field(default='',max_length=200)
     reportPeriod: str=Field(default='',pattern=r'^(?:|[0-9]{4}-Q[1-4])$')
     documentId: str=Field(default='',max_length=80)
     metricField: Literal['','quantity','cost','residual','reimbursable','reimbursed','outstanding']=''
@@ -70,8 +72,13 @@ class Query(BaseModel):
     limit: int=Field(default=50,ge=1,le=100)
     expectedSnapshot: str=Field(default='',max_length=64)
 
+    @field_validator('site')
+    @classmethod
+    def all_sites(cls,value):return '' if value=='all' else value
+
     @model_validator(mode='after')
     def consistent(self):
+        if self.reportYear and self.reportPeriod and int(self.reportPeriod[:4])!=self.reportYear:raise ValueError('Год и квартал не совпадают')
         if self.start and self.end and self.start>self.end:raise ValueError('Период перевёрнут')
         if self.dateMode=='missing' and (self.start or self.end or self.month):raise ValueError('Без даты несовместимо с периодом')
         if self.coverage!='all' and not self.metricField:raise ValueError('Выберите показатель детализации')
@@ -123,14 +130,18 @@ def iter_facts(db,actor,q,full=False):
     ), entry_metadata as materialized (
       select e.record_id,e.document_id,meta.introduced_version,meta.current_version,meta.document_label
       from decision_entries e join version_metadata meta on meta.id=e.version_id
+    ), event_metadata as materialized (
+      select document_id,summary_json,row_number() over(partition by document_id order by number desc) as rank
+      from decision_versions where json_extract(summary_json,'$.inventoryEventOverride') is not null
     ), visible_sites as materialized (
       select id,json_extract(data,'$.name') as site_name from records where collection='sites'
     )
-    select d.id,d.site_id,d.sheet,d.source_row,d.file_sha,e.document_id,
+    select d.id,d.site_id,d.sheet,d.source_row,d.file_sha,d.import_hash,e.document_id,
       e.introduced_version,e.current_version,e.document_label,
-      s.site_name,'''+data+''' as data
+      s.site_name,event.summary_json as event_summary,'''+data+''' as data
       from decision_records d join entry_metadata e on e.record_id=d.id
       join visible_sites s on s.id=d.site_id
+      left join event_metadata event on event.document_id=e.document_id and event.rank=1
       where '''+active+''' and (?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id))
       and (?='' or d.site_id=?) order by d.id'''
     decode=json.JSONDecoder(parse_float=Decimal).decode
@@ -148,6 +159,11 @@ def iter_facts(db,actor,q,full=False):
                     row['day']=date.fromisoformat(day)
                     if row['day'].isoformat()!=day:raise ValueError()
                 except ValueError:row['day']=None;row['invalidDate']=True
+            row['inventory_day']=row['day'];row['inventoryDateMethod']='Дата акта'
+            if row.get('event_summary'):
+                event=json.loads(row['event_summary'])['inventoryEventOverride']
+                if event['mode']=='exclude':row['inventory_day']=None;row['inventoryDateMethod']='Исключено руководителем: '+event['reason']
+                elif event['mode']=='date':row['inventory_day']=date.fromisoformat(event['date']);row['inventoryDateMethod']='Подтверждённое уточнение: '+event['reason']
             row['reportPeriod']=item.get('reportPeriod') if isinstance(item.get('reportPeriod'),str) else None
             row['numbers']={};row['invalid']=set()
             for field in FINANCE[:-1]:
@@ -162,6 +178,8 @@ def iter_facts(db,actor,q,full=False):
 
 def matches(row,q):
     day=row['day']
+    if q.reportYear and (not row.get('reportPeriod') or row['reportPeriod'][:4]!=str(q.reportYear)):return False
+    if q.q and q.q.casefold() not in ' '.join(str(v) for k,v in row.get('data',{}).items() if k in FIELDS).casefold():return False
     if q.documentId and row['document_id']!=q.documentId:return False
     if q.reportPeriod and row['reportPeriod']!=q.reportPeriod:return False
     if (q.start or q.end or q.month or q.dateMode=='dated') and day is None:return False
@@ -187,7 +205,8 @@ class Bucket:
 
     def add(self,row):
         self.rows+=1;self.docs.add(row['document_id'])
-        if row['day']:self.inventory_dates.add((row['site_id'],row['day']))
+        event=row.get('inventory_day',row['day'])
+        if event:self.inventory_dates.add((row['site_id'],event))
         for f,v in row['numbers'].items():
             if v is not None:self.sums[f]+=v;self.known[f]+=1
             if f in row['invalid']:self.invalid[f]+=1
@@ -213,62 +232,83 @@ def snapshot_update(digest,row):
 def public_row(row):
     result={k:format(v,'f') if isinstance(v,Decimal) else v for k,v in row['data'].items() if k in FIELDS and k!='comment'}
     result.update({k:format(v,'f') if v is not None else None for k,v in row['numbers'].items()})
-    return {**result,'reportPeriod':row['reportPeriod'],'id':row['id'],'siteId':row['site_id'],'siteName':row['site_name'],'documentId':row['document_id'],
+    return {**result,'inventoryDate':row.get('inventory_day').isoformat() if row.get('inventory_day') else None,'inventoryDateMethod':row.get('inventoryDateMethod'),'reportPeriod':row['reportPeriod'],'id':row['id'],'siteId':row['site_id'],'siteName':row['site_name'],'documentId':row['document_id'],
             'currentVersion':row['current_version'],'introducedVersion':row['introduced_version'],'sheet':row['sheet'],'sourceRow':row['source_row'],
             'outstanding':format(row['numbers']['outstanding'],'f') if row['numbers']['outstanding'] is not None else None,
             'missingFields':[f for f,v in row['numbers'].items() if v is None],'invalidFields':sorted(row['invalid'])}
 
 
 def aggregate(db,actor,q,all_groups=False):
-    start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};matrix={};facets={f:set() for f in DIMENSIONS};facet_more=set()
-    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0),'fractionalQuantityRows':0};digest=hashlib.sha256()
-    digest.update(json.dumps(q.filters(),sort_keys=True,ensure_ascii=False).encode())
+    start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};matrix={}
+    facets={f:set() for f in DIMENSIONS};facet_more=set();periods_seen=set()
+    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0),'fractionalQuantityRows':0,'outsideReportPeriodRows':0}
+    digest=hashlib.sha256();digest.update(json.dumps(q.filters(),sort_keys=True,ensure_ascii=False).encode())
+    def observe(row):
+        if row.get('reportPeriod'):periods_seen.add(row['reportPeriod'])
+        for f,v in row['dimensions'].items():
+            if v not in facets[f]:
+                if len(facets[f])<100:facets[f].add(v)
+                else:facet_more.add(f)
+    def add_group(group,key,label,row):
+        groups[group].setdefault(key,Bucket()).add(row);labels[group][key]=label
     with localcontext() as context:
         context.prec=50
         for scanned,row in enumerate(iter_facts(db,actor,q),1):
-            if scanned%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Превышено время аналитики; сузьте фильтры')
-            for f,v in row['dimensions'].items():
-                if v not in facets[f]:
-                    if len(facets[f])<100:facets[f].add(v)
-                    else:facet_more.add(f)
+            observe(row)
             if not matches(row,q):continue
+            if scanned%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Превышено время аналитики; сузьте фильтры')
             snapshot_update(digest,row);overall.add(row)
-            cross_key=(row['site_id'],row['reportPeriod'] or '')
-            if cross_key not in matrix:matrix[cross_key]=Bucket()
-            matrix[cross_key].add(row)
+            if row['site_id']:
+                matrix.setdefault((row['site_id'],row['reportPeriod'] or ''),Bucket()).add(row)
+                add_group('sites',row['site_id'],row['site_name'],row)
+            add_group('periods',row['reportPeriod'],row['reportPeriod'] or 'Без отчётного квартала',row)
             quantity=row['numbers']['quantity']
             if quantity is not None and quantity!=quantity.to_integral_value():quality['fractionalQuantityRows']+=1
             if row['day'] is None:quality['missingDateRows']+=1
             if row['invalidDate']:quality['invalidDateRows']+=1
+            if row['day'] and row['reportPeriod'] and f'{row["day"].year}-Q{(row["day"].month-1)//3+1}'!=row['reportPeriod']:quality['outsideReportPeriodRows']+=1
             if row['overpayment'] is not None and row['overpayment']>0:quality['overpaymentRows']+=1;quality['overpaymentValue']+=row['overpayment']
             if (q.page-1)*q.limit<=overall.rows-1<q.page*q.limit:page.append(public_row(row))
-            keys={'periods':row['reportPeriod'],'months':row['day'].isoformat()[:7] if row['day'] else None,'sites':row['site_id'],
-                  'reasons':row['dimensions']['reason'],'tools':row['dimensions']['toolType'],'categories':row['dimensions']['caseCategory']}
-            for g,key in keys.items():
-                if key not in groups[g]:groups[g][key]=Bucket()
-                groups[g][key].add(row)
-                labels[g][key]=row['site_name'] if g=='sites' else key or ('Без даты' if g=='months' else 'Без отчётного квартала' if g=='periods' else 'Не указано')
-            if overall.rows%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Превышено время аналитики; сузьте фильтры')
+            add_group('months',row['day'].isoformat()[:7] if row['day'] else None,row['day'].isoformat()[:7] if row['day'] else 'Без даты',row)
+            for group,field in {'reasons':'reason','tools':'toolType','categories':'caseCategory','decisionTypes':'decisionType','responsibles':'responsible','investigations':'investigation'}.items():
+                key=row['dimensions'][field];add_group(group,key,key or 'Не указано',row)
         charts={}
-        for g,values in groups.items():
-            keys=sorted(values,key=lambda k:(k is None,k or '')) if g in ('months','periods') else sorted(values,key=lambda k:(values[k].value(q.chartMetric) is None,-(values[k].value(q.chartMetric) or Decimal(0)),labels[g][k]))
+        for group,values in groups.items():
+            keys=sorted(values,key=lambda k:(k is None,k or '')) if group in ('months','periods') else sorted(values,key=lambda k:(values[k].value(q.chartMetric) is None,-(values[k].value(q.chartMetric) or Decimal(0)),labels[group][k]))
             count=len(keys)
             if not all_groups:
-                if g in ('months','periods') and count>24:keys=[k for k in keys if k is not None][-(23 if None in values else 24):]+([None] if None in values else [])
-                elif g!='months':keys=keys[:12]
+                if group in ('months','periods') and count>24:keys=keys[-24:]
+                elif group not in ('months','periods'):keys=keys[:12]
             maximum=max((values[k].value(q.chartMetric) or Decimal(0) for k in keys),default=Decimal(0))
             recovery_max=max((values[k].sums[f] for k in keys for f in ('reimbursable','reimbursed')),default=Decimal(0))
             points=[]
-            for k in keys:
-                v=values[k];value=v.value(q.chartMetric)
-                width=lambda x,scale:format((x/scale*100).quantize(Decimal('.01')),'f') if x is not None and scale else '0'
-                points.append({'key':k,'label':labels[g][k],'metrics':v.report(),'width':width(value,maximum),
-                               'reimbursableWidth':width(v.value('reimbursable'),recovery_max),'reimbursedWidth':width(v.value('reimbursed'),recovery_max)})
-            charts[g]={'items':points,'totalGroups':count,'truncated':len(points)<count}
+            for key in keys:
+                bucket=values[key];v=bucket.value(q.chartMetric)
+                def width(x,scale):return format((x/scale*100).quantize(Decimal('.01')),'f') if x is not None and scale else '0'
+                points.append({'key':key,'label':labels[group][key],'metrics':bucket.report(),'width':width(v,maximum),'sharePercent':width(v,overall.value(q.chartMetric)) if v is not None and overall.value(q.chartMetric) and q.chartMetric not in ('inventories','documents') else None,
+                               'reimbursableWidth':width(bucket.value('reimbursable'),recovery_max),'reimbursedWidth':width(bucket.value('reimbursed'),recovery_max)})
+            charts[group]={'items':points,'totalGroups':count,'truncated':len(points)<count}
+    periods=sorted({p for _,p in matrix if p})
+    if q.reportYear:periods=([q.reportPeriod] if q.reportPeriod else [f'{q.reportYear}-Q{i}' for i in range(1,5)])
+    def previous(p):
+        year=int(p[:4]);quarter=int(p[-1]);return f'{year if quarter>1 else year-1}-Q{quarter-1 if quarter>1 else 4}'
+    latest=max((p for _,p in matrix if p),default=None)
+    with db.connect(actor) as con:
+        sites=[{'id':r['id'],'name':json.loads(r['data'])['name']} for r in con.execute("select id,data from records where collection='sites'") if not q.site or r['id']==q.site]
+    matrix_sites=[]
+    for site in sites:
+        bucket=groups['sites'].get(site['id']);current=matrix.get((site['id'],latest));prior=matrix.get((site['id'],previous(latest))) if latest else None
+        a=current.value(q.chartMetric) if current else None;b=prior.value(q.chartMetric) if prior else None
+        diff=a-b if a is not None and b is not None else None
+        matrix_sites.append({**site,'metrics':bucket.report() if bucket else None,'delta':format(diff,'f') if diff is not None else None,
+                             'deltaPercent':format((diff/b*100).quantize(Decimal('.01')),'f') if diff is not None and b else None,
+                             'currentPeriod':latest,'previousPeriod':previous(latest) if latest else None})
     quality['overpaymentValue']=format(quality['overpaymentValue'],'f')
+    quality['reimbursementDifference']=format(overall.sums['reimbursed']-overall.sums['reimbursable'],'f') if (overall.known['reimbursable'] and overall.known['reimbursed']) else None
     return {'provisional':True,'notice':PROVISIONAL,'scope':'active','filters':q.filters(),'snapshot':digest.hexdigest(),
             'definitions':DEFINITIONS,'metrics':overall.report(),'charts':charts,'quality':quality,
             'facets':{f:{'values':sorted(v,key=lambda x:(x is None,x or '')),'truncated':f in facet_more} for f,v in facets.items()},
+            'reportPeriods':sorted(periods_seen),'matrixPeriods':periods,'matrixSites':matrix_sites,
             'matrix':[{'siteId':site_id,'period':period,'metrics':bucket.report()} for (site_id,period),bucket in sorted(matrix.items())],
             'rows':page,'page':q.page,'limit':q.limit,'totalRows':overall.rows,'elapsedSeconds':round(time.monotonic()-start,3)}
 
@@ -290,7 +330,7 @@ def summary_rows(data):
         for row in data['charts'][group]['items']:yield line(GROUPS[group],row['label'],row['metrics'])
 
 
-ROW_HEADERS=list(FIELDS.values())+['ID записи','ID документа','Действующая версия документа','Версия введения строки','Лист','Строка Excel','SHA-256 файла','Невозмещённый остаток, ₽','Некорректные поля источника','Статус','Фильтры']
+ROW_HEADERS=list(FIELDS.values())+['ID записи','ID документа','Действующая версия документа','Версия введения строки','Лист','Строка Excel','SHA-256 файла','Невозмещённый остаток, ₽','Некорректные поля источника','Статус','Фильтры','Отчётный квартал','Дата инвентаризации','Методика даты']
 
 
 def export_file(db,actor,q,kind,extension,folder):
@@ -310,7 +350,7 @@ def export_file(db,actor,q,kind,extension,folder):
                     if scanned%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Время выгрузки истекло; сузьте фильтры')
                     if not matches(row,q):continue
                     snapshot_update(digest,row)
-                    yield [row['data'].get(f) for f in FIELDS]+[row['id'],row['document_id'],row['current_version'],row['introduced_version'],row['sheet'],row['source_row'],row['file_sha'],row['numbers']['outstanding'],', '.join(sorted(row['invalid'])),PROVISIONAL,json.dumps(q.filters(),ensure_ascii=False,sort_keys=True)]
+                    yield [row['data'].get(f) for f in FIELDS]+[row['id'],row['document_id'],row['current_version'],row['introduced_version'],row['sheet'],row['source_row'],row['file_sha'],row['numbers']['outstanding'],', '.join(sorted(row['invalid'])),PROVISIONAL,json.dumps(q.filters(),ensure_ascii=False,sort_keys=True),row.get('reportPeriod'),row.get('inventory_day').isoformat() if row.get('inventory_day') else None,row.get('inventoryDateMethod')]
             if q.expectedSnapshot and digest.hexdigest()!=q.expectedSnapshot:raise HTTPException(409,'Данные изменились; обновите панель перед выгрузкой')
     if extension=='csv':
         with target.open('x',encoding='utf-8-sig',newline='') as handle:

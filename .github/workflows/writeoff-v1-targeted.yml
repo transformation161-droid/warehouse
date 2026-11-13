@@ -1,33 +1,114 @@
 name: Write-off analytics - targeted acceptance
-
 on:
   pull_request:
     branches: [release/pr41-accepted-baseline]
     paths:
-      - 'server/app.py'
-      - 'server/decision_import.py'
-      - 'server/models.py'
-      - 'server/offline_release.py'
-      - 'server/writeoff_analytics.py'
+      - 'server/**'
       - 'release_online/**'
-      - 'tests/test_writeoff_release_v1.py'
+      - 'tests/**writeoff**'
+      - 'tools/Start-Writeoff-Preview.ps1'
+      - 'tools/writeoff_demo/**'
+      - 'docs/PR46*'
       - '.github/workflows/writeoff-v1-targeted.yml'
-
+permissions:
+  contents: read
 jobs:
   targeted:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install production dependencies and test client
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m compileall -q server tools/writeoff_demo tests
+      - run: node --check release_online/writeoff_analytics.js
+      - name: Import, exact totals, versions, conflicts and ACL
+        run: python -m unittest -v tests.test_writeoff_release_v1 tests.test_writeoff_pilot tests.test_writeoff_analytics tests.test_decision_import tests.test_decision_versions tests.test_writeoff_demo tests.test_offline_release.Release.test_legacy_permissions_and_online_assets_are_preserved_without_seed tests.test_offline_release.Release.test_policy_refuses_lab_wildcards_and_startup_ddl
+      - name: Actual PostgreSQL 17 and least-privilege roles
+        run: python -m unittest -v tests.test_writeoff_postgres
+      - run: python -m playwright install --with-deps chromium
+      - name: Integrated UI, XLSX flow, corrected act and account isolation
+        run: python -m tests.writeoff_browser --output "$RUNNER_TEMP/writeoff-ui"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PR46-UI-check
+          path: ${{ runner.temp }}/writeoff-ui
+          retention-days: 14
+  isolated-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m tools.writeoff_demo.package build "$RUNNER_TEMP/PR46-Preview"
+      - name: Build exact PR image; no deploy
+        run: docker build -t instrakt-pr46:test -f "$RUNNER_TEMP/PR46-Preview/app-source/Dockerfile.managed-postgres" "$RUNNER_TEMP/PR46-Preview/app-source"
+      - name: Private HTTPS, PostgreSQL, three roles, export and restart
+        run: python -m tests.writeoff_demo_container --kit "$RUNNER_TEMP/PR46-Preview" --image instrakt-pr46:test --output "$RUNNER_TEMP/writeoff-container-result.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PR46-container-check
+          path: ${{ runner.temp }}/writeoff-container-result.json
+          retention-days: 14
+  windows-powershell:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m tools.writeoff_demo.package build "$env:RUNNER_TEMP\PR46-Preview"
+        shell: powershell
+      - name: Native PowerShell 5 commands and isolation guards
+        timeout-minutes: 2
+        shell: powershell
+        env:
+          PR46_KIT: ${{ runner.temp }}\PR46 extracted kit
         run: |
-          python -m pip install -r requirements.txt httpx==0.28.1
-      - name: Python compile check
-        run: python -m compileall -q server/
-      - name: JS parse check
-        run: node --check release_online/writeoff_analytics.js
-      - name: Focused analytics regressions
-        run: python -m unittest -v tests.test_writeoff_release_v1 tests.test_writeoff_analytics tests.test_decision_import
+          python -c "import os,shutil; p=os.path.join(os.environ['RUNNER_TEMP'],'PR46-Preview'); shutil.make_archive(p,'zip',p)"
+          $pr46Zip = Join-Path $env:RUNNER_TEMP 'PR46-Preview.zip'
+          Expand-Archive -LiteralPath $pr46Zip -DestinationPath $env:PR46_KIT
+          ./tests/windows_writeoff_demo.Tests.ps1
+  publish-verified-preview:
+    needs: [targeted,isolated-docker,windows-powershell]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m tools.writeoff_demo.package build "$RUNNER_TEMP/PR46-Preview"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PR46-Preview
+          path: ${{ runner.temp }}/PR46-Preview/
+          include-hidden-files: true
+          retention-days: 14
+      - uses: actions/download-artifact@v4
+        with:
+          name: PR46-Preview
+          path: ${{ runner.temp }}/preview-downloaded
+      - run: python -m tools.writeoff_demo.package check "$RUNNER_TEMP/preview-downloaded"

@@ -1,3 +1,5 @@
+> **Draft PR46: аналитика построчных списаний** — [проверка и ограничения](docs/PR46_AUDIT.md), [изолированный предпросмотр Windows/Android](docs/PR46_PREVIEW.md). Сводный файл «Аналитика инвентаризаций» не импортируется. Production не обновлён.
+
 > **Подключение PostgreSQL Amvera:** [явные профили и ограничения безопасности](docs/AMVERA_PG_TRANSPORT.md). Для остальных провайдеров verify-full остаётся обязательным.
 
 > **Первый рабочий пилот: чистая PostgreSQL, без миграции демо-SQLite.** [Короткая инструкция владельцу](docs/FIRST_POSTGRES_PILOT.md), [редактор и версии чек-листа](docs/CHECKLIST_MANAGEMENT.md), [будущие пользователи — только требования](docs/FUTURE_USER_ADMIN.md).
