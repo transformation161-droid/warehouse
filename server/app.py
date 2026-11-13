@@ -128,7 +128,7 @@ def create_app(path=None, origin=None, secure=None):
         if actor['role']=='viewer' and not getattr(db,'viewer_read_capable',True):
             fail('Для просмотра требуется явное обновление функций чтения на новой PostgreSQL-копии',403)
         if release_policy:release_policy.routes(request.url.path)
-        if request.url.path.startswith('/api/decision-imports') and actor['role']!='manager':
+        if release_policy and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')=='on' and request.url.path.startswith('/api/decision-imports') and actor['role']!='manager':
             fail('Импорт списаний доступен только руководителю',403)
         expected=[request.headers.get('X-KSU-Expected-User')]
         if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
