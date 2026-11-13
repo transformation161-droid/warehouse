@@ -42,7 +42,8 @@ class Policy:
 
     def routes(self,path):
         if path.startswith(('/api/decision-imports','/api/decisions','/api/decision-documents','/api/writeoff-analytics')):
-            fail('Этот раздел не включён в первый офлайн-релиз',404)
+            if os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':
+                fail('Раздел аналитики списаний пока не включён',404)
 
 
 def install(app,auth,policy):
