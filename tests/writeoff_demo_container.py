@@ -97,7 +97,7 @@ def run(kit,image):
                 for ext in ('csv','xlsx'):
                     response=manager.get('/api/writeoff-analytics/export/rows.'+ext);assert response.status_code==200
                 assert manager.get('/api/writeoff-analytics?reportPeriod=2026-Q2').json()['totalRows']==39
-                assert manager.get('/writeoff_charts.js').status_code==200 and manager.get('/writeoff_charts.css').status_code==200
+                assert manager.get('/writeoff_charts.js').status_code==200 and manager.get('/writeoff_charts.css').status_code==200 and manager.get('/writeoff_statement.js').status_code==200
                 html=manager.get('/').text;assert 'writeoff_analytics.js' in html
                 assert manager.get('/writeoff_analytics.js').status_code==200
                 invoke('stop',app,pg);invoke('start',pg);pg_ready();invoke('start',app);app_ready()

@@ -16,10 +16,10 @@ def rows():
             cost='0' if zero else '26787.50' if i==33 else '10000',
             residual='0' if zero else '14827.87' if i==33 else '3000',
             reason='ДЕМО · Недостача' if i%3==0 else 'ДЕМО · Повреждение',caseCategory='ДЕМО',
-            investigation='ДЕМО · Проверяется',decision='ДЕМО · Решение',
+            investigation='ДЕМО · Проверяется',decision=('ДЕМО · Решение. Задача: https://bitrix.demo.invalid/company/personal/user/7/tasks/task/view/'+str(10000+i)+'/ · продолжение решения') if i%3==0 else 'ДЕМО · Решение без ссылки',
             reimbursable='0' if zero else '14827.87' if i==33 else '3000',
             reimbursed='0' if zero else '17992.36' if i==33 else '3000',
-            responsible='ДЕМО · Сотрудник',comment='Вымышленные данные для приёмки')
+            responsible='ДЕМО · Сотрудник',comment='ДЕМО · позиция '+str(i+1)+' — вымышленные данные для приёмки')
         result.append(row)
     return result
 

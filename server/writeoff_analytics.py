@@ -142,7 +142,7 @@ def iter_facts(db,actor,q,full=False):
       join visible_sites s on s.id=d.site_id
       left join event_metadata event on event.document_id=e.document_id and event.rank=1
       where '''+active+''' and (?='manager' or exists(select 1 from user_sites us where us.user_id=? and us.site_id=d.site_id))
-      and (?='' or d.site_id=?) order by d.id'''
+      and (?='' or d.site_id=?) order by '''+("coalesce(json_extract(d.data,'$.reportPeriod'),'') desc,e.document_label,d.file_sha,d.sheet,d.source_row,d.id" if q.site else 'd.id')
     decode=json.JSONDecoder(parse_float=Decimal).decode
     with db.connect(actor) as con:
         # Aggregation/exports consume the entire cursor, not the first 10% of it.
@@ -225,7 +225,7 @@ def snapshot_update(digest,row):
 
 
 def public_row(row):
-    result={k:format(v,'f') if isinstance(v,Decimal) else v for k,v in row['data'].items() if k in FIELDS and k!='comment'}
+    result={k:format(v,'f') if isinstance(v,Decimal) else v for k,v in row['data'].items() if k in FIELDS}
     result.update({k:format(v,'f') if v is not None else None for k,v in row['numbers'].items()})
     return {**result,'inventoryDate':row.get('inventory_day').isoformat() if row.get('inventory_day') else None,'inventoryDateMethod':row.get('inventoryDateMethod'),'reportPeriod':row['reportPeriod'],'id':row['id'],'siteId':row['site_id'],'siteName':row['site_name'],'documentId':row['document_id'],
             'currentVersion':row['current_version'],'introducedVersion':row['introduced_version'],'sheet':row['sheet'],'sourceRow':row['source_row'],
@@ -247,7 +247,7 @@ def aggregate(db,actor,q,all_groups=False):
         groups[group].setdefault(key,Bucket()).add(row);labels[group][key]=label
     with localcontext() as context:
         context.prec=50
-        for scanned,row in enumerate(iter_facts(db,actor,q),1):
+        for scanned,row in enumerate(iter_facts(db,actor,q,full=bool(q.site or q.q)),1):
             observe(row)
             if not matches(row,q):continue
             if scanned%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Превышено время аналитики; сузьте фильтры')

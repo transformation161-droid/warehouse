@@ -47,6 +47,6 @@ class Charts(unittest.TestCase):
             try:
                 with TestClient(gated) as client:
                     index=client.get('/').text
-                    for asset in ('writeoff_analytics.js','writeoff_charts.js','writeoff_charts.css'):
+                    for asset in ('writeoff_analytics.js','writeoff_charts.js','writeoff_charts.css','writeoff_statement.js'):
                         self.assertNotIn(asset,index);self.assertEqual(client.get('/'+asset).status_code,404)
             finally:gated.state.import_jobs.close()

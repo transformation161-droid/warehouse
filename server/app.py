@@ -679,14 +679,14 @@ def create_app(path=None, origin=None, secure=None):
     def make_asset(filename):
         def asset():
             if release_policy and filename in ('decisions.js','calendar.js'):return Response(status_code=404)
-            if release_policy and filename in ('writeoff_analytics.js','writeoff_charts.js','writeoff_charts.css') and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':return Response(status_code=404)
+            if release_policy and filename in ('writeoff_analytics.js','writeoff_charts.js','writeoff_charts.css','writeoff_statement.js') and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':return Response(status_code=404)
             if release_policy and filename=='index.html' and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':
                 html=(ROOT/'release_online/index.html').read_text()
-                for tag in ('<script src="writeoff_analytics.js" defer></script>','<script src="writeoff_charts.js" defer></script>','<link rel="stylesheet" href="writeoff_charts.css" />'):html=html.replace(tag,'')
+                for tag in ('<script src="writeoff_analytics.js" defer></script>','<script src="writeoff_charts.js" defer></script>','<script src="writeoff_statement.js" defer></script>','<link rel="stylesheet" href="writeoff_charts.css" />'):html=html.replace(tag,'')
                 return Response(html,media_type='text/html')
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/writeoff_charts.js','writeoff_charts.js'),('/writeoff_charts.css','writeoff_charts.css'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/writeoff_charts.js','writeoff_charts.js'),('/writeoff_statement.js','writeoff_statement.js'),('/writeoff_charts.css','writeoff_charts.css'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release

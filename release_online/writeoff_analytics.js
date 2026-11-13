@@ -5,7 +5,7 @@
   const METRICS={quantity:'Количество, ед.',cost:'Стоимость, ₽',residual:'Остаточная стоимость, ₽',reimbursable:'К возмещению, ₽',reimbursed:'Фактически возмещено, ₽',inventories:'Инвентаризации по датам',documents:'Документы',decisions:'Строки реестра'};
   const DIMS={reason:'Причина',toolType:'Тип ТМЦ',decisionType:'Тип решения',caseCategory:'Категория',investigation:'Расследование',responsible:'Ответственный / МОЛ'};
   const GROUP_FILTER={sites:'site',periods:'reportPeriod',months:'month',reasons:'reason',tools:'toolType',categories:'caseCategory',decisionTypes:'decisionType',responsibles:'responsible',investigations:'investigation'};
-  const state={owner:'',tab:'writeoffs',filters:{},metric:'cost',page:1,top:10,sort:'value',cache:new Map(),pending:new Set(),errors:new Map(),job:null,busy:false,importOptions:null,documents:[],documentPage:1,comparisonPage:1,chartTop:5,chartHighlight:'',chartSites:null,chartStructure:'reasons'};
+  const state={owner:'',tab:'writeoffs',filters:{},metric:'cost',page:1,top:10,sort:'value',cache:new Map(),pending:new Set(),errors:new Map(),job:null,busy:false,importOptions:null,documents:[],documentPage:1,comparisonPage:1,chartTop:5,chartHighlight:'',chartSites:null,chartStructure:'reasons',rowScope:''};
   const allowed=()=>sessionUser&&['manager','inspector'].includes(sessionUser.role);
   const money=k=>['cost','residual','reimbursable','reimbursed'].includes(k);
   const format=(v,k)=>v==null?'—':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:money(k)?4:6}).format(v)+(money(k)?' ₽':'');
@@ -16,7 +16,7 @@
   function identity(){return sessionUser?sessionUser.id+':'+sessionUser.csrf:''}
   function syncOwner(){
     if(state.owner===identity())return;
-    state.owner=identity();state.cache.clear();state.pending.clear();state.errors.clear();state.filters={};state.page=1;state.job=null;state.importOptions=null;state.busy=false;state.documents=[];state.chartTop=5;state.chartHighlight='';state.chartSites=null;state.chartStructure='reasons';
+    state.owner=identity();state.cache.clear();state.pending.clear();state.errors.clear();state.filters={};state.page=1;state.job=null;state.importOptions=null;state.busy=false;state.documents=[];state.chartTop=5;state.chartHighlight='';state.chartSites=null;state.chartStructure='reasons';state.rowScope='';
   }
   function query(site){
     const p=new URLSearchParams();for(const [k,v] of Object.entries({...state.filters,...(site?{site}:{})}))if(v!==''&&v!=null)p.set(k,v);
@@ -34,7 +34,8 @@
   }
   const post=(url,data)=>request(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   function dataset(site){
-    syncOwner();const k=key(site),owner=identity();
+    syncOwner();const scope=site||state.filters.site||'all';if(state.rowScope!==scope){state.rowScope=scope;state.page=1}
+    const k=key(site),owner=identity();
     if(!state.cache.has(k)&&!state.pending.has(k)&&!state.errors.has(k)){
       state.pending.add(k);
       queueMicrotask(()=>request('/api/writeoff-analytics?'+query(site)).then(d=>{
@@ -76,7 +77,9 @@
     const all=d.charts[group]?.items||[],items=state.top?all.slice(0,state.top):all;
     return `<section class="card section-gap"><div class="card-title">${esc(label)}</div><div class="card-subtitle">${esc(METRICS[state.metric])} · показано ${items.length} из ${all.length}. Нажмите группу для детализации.</div>${!items.length?empty('Нет загруженных данных','Загрузите построчный отчёт или измените фильтры'):`<div class="chart-list">${items.map(x=>`<div class="chart-item"><span class="chart-item-name"><button class="link" data-wo-cross="${GROUP_FILTER[group]}" data-wo-value="${attr(x.key??'')}" title="${attr(x.label)}" data-wo-missing="${x.key==null?'1':''}">${esc(x.label)}</button></span><span class="bar-track"><span class="bar-fill" style="display:block;width:${Number(x.width)||0}%"></span></span><span class="chart-value">${format(value(x.metrics,state.metric),state.metric)}${x.sharePercent==null?'':` <small class="muted">${esc(x.sharePercent)}%</small>`}</span></div>`).join('')}</div>`}</section>`;
   }
-  function registry(d){
+  function registry(d,site){
+    const sourceSite=site||d.filters.site;
+    if(sourceSite)return window.WriteoffStatement.render(d,{siteName:nameSite(sourceSite),format,date:fmtDate});
     return `<section class="card section-gap" id="wo-registry"><div class="card-title-row"><div><div class="card-title">Реестр списаний</div><div class="card-subtitle">${d.totalRows} действующих строк · страница ${d.page}. Откройте строку для исходных полей и истории акта.</div></div><div class="page-actions">${btn('Строки XLSX','export','data-wo-kind="rows" data-wo-ext="xlsx"')}${btn('CSV','export','data-wo-kind="rows" data-wo-ext="csv"')}</div></div><div class="table-wrap"><table class="table"><thead><tr><th>Дата акта / квартал</th><th>Объект / документ</th><th>Тип / причина</th><th>Кол-во</th><th>Стоимость</th><th>Остаточная</th><th>К возмещению</th><th>Фактически возмещено</th><th></th></tr></thead><tbody>${d.rows.map(r=>`<tr><td>${esc(fmtDate(r.date))}<br><small>${esc(r.reportPeriod||'Без квартала')}</small></td><td><button class="link" data-wo-site="${attr(r.siteId)}">${esc(r.siteName)}</button><br>${esc(r.document)}</td><td>${esc(r.toolType)}<br><small>${esc(r.reason)}</small></td><td>${format(r.quantity,'quantity')}</td><td>${format(r.cost,'cost')}</td><td>${format(r.residual,'residual')}</td><td data-wo-field="reimbursable">${format(r.reimbursable,'cost')}</td><td data-wo-field="reimbursed">${format(r.reimbursed,'cost')}</td><td>${btn('Открыть','detail',`data-wo-id="${attr(r.id)}"`)}</td></tr>`).join('')}</tbody></table></div><div class="actions-row section-gap">${btn('Предыдущая','page',`data-wo-step="-1"${d.page<=1?' disabled':''}`)}${btn('Следующая','page',`data-wo-step="1"${d.page*d.limit>=d.totalRows?' disabled':''}`)}</div></section>`;
   }
   function recovery(d){
@@ -86,7 +89,7 @@
     const {data:d,error}=dataset(site),workspace=document.querySelector('.workspace'),style=workspace?getComputedStyle(workspace):null;
     const available=workspace?workspace.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight):Math.min(1100,innerWidth-32);
     const width=Math.max(300,(available-(innerWidth>900?16:0))/(innerWidth>900?2:1)-40);
-    return `<div data-wo-panel>${filters(d,site)}${error?`<div class="notice warn">${esc(error)} ${btn('Повторить','reload')}</div>`:!d?'<div class="card section-gap">Загружаем аналитику…</div>':(site?'':kpis(d))+window.WriteoffCharts.render(d,{metric:state.metric,top:state.chartTop,highlight:state.chartHighlight,sites:state.chartSites,structure:state.chartStructure,site,width,structureWidth:site?width:Math.max(300,available-40)})+(site?kpis(d):'')+notices(d)+matrix(d)+`<details class="wo-detail-charts"><summary>Дополнительные разрезы: даты актов, категории, решения и ответственные</summary><div class="grid grid-2">${Object.entries({months:'Месяцы по датам актов',categories:'Категории случаев',decisionTypes:'Типы решений',responsibles:'Ответственные / МОЛ',investigations:'Статус расследования'}).map(([k,v])=>barsGroup(d,k,v)).join('')}</div></details>`+recovery(d)+registry(d)}</div>`;
+    return `<div data-wo-panel>${filters(d,site)}${error?`<div class="notice warn">${esc(error)} ${btn('Повторить','reload')}</div>`:!d?'<div class="card section-gap">Загружаем аналитику…</div>':(site?'':kpis(d))+window.WriteoffCharts.render(d,{metric:state.metric,top:state.chartTop,highlight:state.chartHighlight,sites:state.chartSites,structure:state.chartStructure,site,width,structureWidth:site?width:Math.max(300,available-40)})+(site?kpis(d):'')+notices(d)+matrix(d)+`<details class="wo-detail-charts"><summary>Дополнительные разрезы: даты актов, категории, решения и ответственные</summary><div class="grid grid-2">${Object.entries({months:'Месяцы по датам актов',categories:'Категории случаев',decisionTypes:'Типы решений',responsibles:'Ответственные / МОЛ',investigations:'Статус расследования'}).map(([k,v])=>barsGroup(d,k,v)).join('')}</div></details>`+recovery(d)+registry(d,site)}</div>`;
   }
   const baseReports=renderReports;
   renderReports=function(){
@@ -116,7 +119,7 @@
     const html=baseSites();if(!allowed()||!ui.siteId)return html;
     const root=document.createElement('div');root.innerHTML=replaceInventoryStats(html,ui.siteId);
     const block=document.createElement('div');block.innerHTML=analytics(ui.siteId);
-    const visuals=document.createElement('div');visuals.className='wo-site-visuals';visuals.innerHTML=heading('Аналитика списаний объекта','Те же расчёты, фильтры и права доступа, что в общем отчёте');
+    const visuals=document.createElement('div');visuals.className='wo-site-visuals';visuals.innerHTML=heading('Аналитика списаний объекта','Те же расчёты, фильтры и права доступа, что в общем отчёте',btn('Полная ведомость','statement'));
     for(const node of [block.querySelector('.wo-filters'),block.querySelector('#wo-charts')])if(node)visuals.append(node);
     const summary=root.querySelector('.grid.grid-4');
     if(summary)summary.after(visuals);else root.append(visuals);
@@ -213,7 +216,7 @@
   }
   async function detail(id){
     const r=await request('/api/decisions/'+id),versions=await request('/api/decision-documents/'+r.documentId+'/versions');state.detail={r,version:versions[0].number};
-    openModal(`<div class="meta-list" style="display:block">${Object.entries(FIELDS).map(([k,v])=>`<p><small class="muted">${esc(v)}</small><br><strong>${esc(r.data[k]??'Не указано')}</strong></p>`).join('')}</div><p class="tiny muted">Лист ${esc(r.sheet)} · строка ${r.sourceRow}. Отчётный квартал: ${esc(r.data.reportPeriod||'Не задан')}. SHA-256 ${esc(r.fileSha256)}.</p><details><summary>История версий документа</summary>${versions.map(v=>`<p>Версия ${v.number} · ${esc(v.actor)} · ${esc(v.created_at)} · ${esc(v.reason)}<br><small>${esc(JSON.stringify(v.summary.inventoryEventOverride||v.summary.counts||{}))}</small></p>`).join('')}</details>${sessionUser.role==='manager'?`<div class="divider"></div><div class="field"><label>Уточнение даты инвентаризации для всего документа</label><select id="wo-event-mode">${option('default','По исходной дате акта','default')}${option('date','Подтверждённая другая дата','')}${option('exclude','Исключить документ из счётчика событий','')}</select></div><div class="field"><label>Подтверждённая дата (только для другой даты)</label><input id="wo-event-date" type="date"></div><div class="field"><label>Основание уточнения *</label><textarea id="wo-event-reason" maxlength="1200"></textarea></div>`:''}<div id="wo-feedback"></div>`, 'Данные строки и акта','Исходные поля сохранены; история доступна в рамках прав объекта',true,`${btn('Закрыть','close')}${btn('Все строки акта','document',`data-wo-id="${attr(r.documentId)}"`)}${sessionUser.role==='manager'?btn('Подтвердить уточнение','event','',true):''}`);
+    openModal(`<div class="meta-list" style="display:block">${Object.entries(FIELDS).map(([k,v])=>`<p><small class="muted">${esc(v)}</small><br><strong>${k==='decision'?window.WriteoffStatement.text(r.data[k]):esc(r.data[k]??'Не указано')}</strong></p>`).join('')}</div><p class="tiny muted">Лист ${esc(r.sheet)} · строка ${r.sourceRow}. Отчётный квартал: ${esc(r.data.reportPeriod||'Не задан')}. SHA-256 ${esc(r.fileSha256)}.</p><details><summary>История версий документа</summary>${versions.map(v=>`<p>Версия ${v.number} · ${esc(v.actor)} · ${esc(v.created_at)} · ${esc(v.reason)}<br><small>${esc(JSON.stringify(v.summary.inventoryEventOverride||v.summary.counts||{}))}</small></p>`).join('')}</details>${sessionUser.role==='manager'?`<div class="divider"></div><div class="field"><label>Уточнение даты инвентаризации для всего документа</label><select id="wo-event-mode">${option('default','По исходной дате акта','default')}${option('date','Подтверждённая другая дата','')}${option('exclude','Исключить документ из счётчика событий','')}</select></div><div class="field"><label>Подтверждённая дата (только для другой даты)</label><input id="wo-event-date" type="date"></div><div class="field"><label>Основание уточнения *</label><textarea id="wo-event-reason" maxlength="1200"></textarea></div>`:''}<div id="wo-feedback"></div>`, 'Данные строки и акта','Исходные поля сохранены; история доступна в рамках прав объекта',true,`${btn('Закрыть','close')}${btn('Все строки акта','document',`data-wo-id="${attr(r.documentId)}"`)}${sessionUser.role==='manager'?btn('Подтвердить уточнение','event','',true):''}`);
   }
   function download(url){
     // Check identity via fetch as well as response headers before starting a download.
@@ -240,6 +243,7 @@
     if(a==='close'){if(!state.busy)closeModal();return}
     if(a==='clear'){state.filters={};state.page=1;reload();return}
     if(a==='reload'){reload();return}
+    if(a==='statement'){const target=document.getElementById('wo-registry');if(target)window.scrollTo({top:target.getBoundingClientRect().top+scrollY-90,behavior:'smooth'});return}
     if(a==='page'){state.page+=Number(el.dataset.woStep);reload();return}
     if(a==='document'){state.filters.documentId=el.dataset.woId;state.page=1;closeModal();reload();return}
     if(a==='coverage'){state.filters.metricField=el.dataset.woField;state.filters.coverage='missing';state.page=1;reload();return}
