@@ -24,12 +24,12 @@ from .decision_versions import ACTIVE
 from .reports import safe_cell
 from .storage import check_storage
 
-FINANCE=('quantity','cost','residual','reimbursable','reimbursed','outstanding')
+FINANCE=('quantity','cost','residual','reimbursable','reimbursed')
 NUMBER_MAX=Decimal('1000000000000')
 SNAPSHOT_ENCODE=json.JSONEncoder(ensure_ascii=False,separators=(',',':')).encode
 DIMENSIONS=('toolType','reason','decisionType','responsible','investigation','caseCategory')
 GROUPS={'decisionTypes':'Типы решений','responsibles':'Ответственные / МОЛ','investigations':'Расследования','periods':'Отчётные кварталы','months':'Месяцы по дате акта','sites':'Объекты','reasons':'Причины','tools':'Инструменты','categories':'Категории'}
-PROVISIONAL='Предварительная аналитика. Не официальная отчётность; по загруженным построчным отчётам. Незагруженные периоды — нет данных. Суммы возмещений требуют сверки первичных документов.'
+PROVISIONAL='Предварительная аналитика. Не официальная отчётность; по загруженным построчным отчётам. Незагруженные периоды — нет данных. К возмещению и фактически возмещено — самостоятельные поля источника.'
 DEFINITIONS={
  'inventories':{'label':'Инвентаризации по датам актов','unit':'событий','definition':'По уникальным датам актов, скорректированным при наличии подтверждённых исключений: сочетание siteId и даты. Несколько актов за один день считаются одним событием; при нескольких отдельных инвентаризациях в один день показатель требует уточнения.'},
  'documents':{'label':'Документы','unit':'док.','definition':'Число различных логических документов, имеющих хотя бы одну действующую строку в выбранном срезе. Импорты объединены только явно подтверждёнными исправлениями. Не число уникальных названий или файлов; бизнес-идентичность ещё требует проверки.'},
@@ -37,9 +37,8 @@ DEFINITIONS={
  'quantity':{'label':'Количество по источнику','unit':'ед.','definition':'Точная сумма заполненного поля «Кол-во», без округления. Единицы неоднородны и источником не нормированы. Дробные количества требуют проверки источника, но не признаются ошибкой автоматически.'},
  'cost':{'label':'Стоимость списаний','unit':'₽','definition':'Сумма заполненного поля «Стоимость». Не автоматически установленный ущерб.'},
  'residual':{'label':'Остаточная стоимость','unit':'₽','definition':'Сумма заполненного поля «Остаточная стоимость». Не прибавляется к стоимости списаний.'},
- 'reimbursable':{'label':'К возмещению','unit':'₽','definition':'Сумма заполненного назначения к возмещению в источнике. Не равна стоимости списаний.'},
- 'reimbursed':{'label':'Фактически возмещено','unit':'₽','definition':'Сумма заполненных фактически возмещённых сумм. Само по себе не подтверждает полноту назначения.'},
- 'outstanding':{'label':'Невозмещённый остаток','unit':'₽','definition':'Сумма max(к возмещению − фактически возмещено, 0) отдельно по каждой строке, только когда заполнены оба поля. Переплата одной строки не погашает остаток другой; при неполных полях остаток неизвестен.'}}
+ 'reimbursable':{'label':'К возмещению','unit':'₽','definition':'Сумма заполненных значений поля «К возмещению» источника. Учитывается самостоятельно.'},
+ 'reimbursed':{'label':'Фактически возмещено','unit':'₽','definition':'Сумма заполненных значений поля «Фактически возмещено» источника. Учитывается самостоятельно.'}}
 
 
 class Query(BaseModel):
@@ -65,9 +64,9 @@ class Query(BaseModel):
     q: str=Field(default='',max_length=200)
     reportPeriod: str=Field(default='',pattern=r'^(?:|[0-9]{4}-Q[1-4])$')
     documentId: str=Field(default='',max_length=80)
-    metricField: Literal['','quantity','cost','residual','reimbursable','reimbursed','outstanding']=''
+    metricField: Literal['','quantity','cost','residual','reimbursable','reimbursed']=''
     coverage: Literal['all','known','missing','fractional']='all'
-    chartMetric: Literal['inventories','documents','decisions','quantity','cost','residual','reimbursable','reimbursed','outstanding']='cost'
+    chartMetric: Literal['inventories','documents','decisions','quantity','cost','residual','reimbursable','reimbursed']='cost'
     page: int=Field(default=1,ge=1,le=1000000)
     limit: int=Field(default=50,ge=1,le=100)
     expectedSnapshot: str=Field(default='',max_length=64)
@@ -166,13 +165,9 @@ def iter_facts(db,actor,q,full=False):
                 elif event['mode']=='date':row['inventory_day']=date.fromisoformat(event['date']);row['inventoryDateMethod']='Подтверждённое уточнение: '+event['reason']
             row['reportPeriod']=item.get('reportPeriod') if isinstance(item.get('reportPeriod'),str) else None
             row['numbers']={};row['invalid']=set()
-            for field in FINANCE[:-1]:
+            for field in FINANCE:
                 value,bad=number(item.get(field),field=='quantity');row['numbers'][field]=value
                 if bad:row['invalid'].add(field)
-            owed,paid=row['numbers']['reimbursable'],row['numbers']['reimbursed']
-            row['numbers']['outstanding']=max(owed-paid,Decimal(0)) if owed is not None and paid is not None else None
-            if {'reimbursable','reimbursed'} & row['invalid']:row['invalid'].add('outstanding')
-            row['overpayment']=max(paid-owed,Decimal(0)) if owed is not None and paid is not None else None
             yield row
 
 
@@ -234,14 +229,13 @@ def public_row(row):
     result.update({k:format(v,'f') if v is not None else None for k,v in row['numbers'].items()})
     return {**result,'inventoryDate':row.get('inventory_day').isoformat() if row.get('inventory_day') else None,'inventoryDateMethod':row.get('inventoryDateMethod'),'reportPeriod':row['reportPeriod'],'id':row['id'],'siteId':row['site_id'],'siteName':row['site_name'],'documentId':row['document_id'],
             'currentVersion':row['current_version'],'introducedVersion':row['introduced_version'],'sheet':row['sheet'],'sourceRow':row['source_row'],
-            'outstanding':format(row['numbers']['outstanding'],'f') if row['numbers']['outstanding'] is not None else None,
             'missingFields':[f for f,v in row['numbers'].items() if v is None],'invalidFields':sorted(row['invalid'])}
 
 
 def aggregate(db,actor,q,all_groups=False):
     start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};matrix={}
     facets={f:set() for f in DIMENSIONS};facet_more=set();periods_seen=set()
-    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0),'fractionalQuantityRows':0,'outsideReportPeriodRows':0}
+    page=[];quality={'missingDateRows':0,'invalidDateRows':0,'fractionalQuantityRows':0,'outsideReportPeriodRows':0}
     digest=hashlib.sha256();digest.update(json.dumps(q.filters(),sort_keys=True,ensure_ascii=False).encode())
     def observe(row):
         if row.get('reportPeriod'):periods_seen.add(row['reportPeriod'])
@@ -267,7 +261,6 @@ def aggregate(db,actor,q,all_groups=False):
             if row['day'] is None:quality['missingDateRows']+=1
             if row['invalidDate']:quality['invalidDateRows']+=1
             if row['day'] and row['reportPeriod'] and f'{row["day"].year}-Q{(row["day"].month-1)//3+1}'!=row['reportPeriod']:quality['outsideReportPeriodRows']+=1
-            if row['overpayment'] is not None and row['overpayment']>0:quality['overpaymentRows']+=1;quality['overpaymentValue']+=row['overpayment']
             if (q.page-1)*q.limit<=overall.rows-1<q.page*q.limit:page.append(public_row(row))
             add_group('months',row['day'].isoformat()[:7] if row['day'] else None,row['day'].isoformat()[:7] if row['day'] else 'Без даты',row)
             for group,field in {'reasons':'reason','tools':'toolType','categories':'caseCategory','decisionTypes':'decisionType','responsibles':'responsible','investigations':'investigation'}.items():
@@ -303,8 +296,6 @@ def aggregate(db,actor,q,all_groups=False):
         matrix_sites.append({**site,'metrics':bucket.report() if bucket else None,'delta':format(diff,'f') if diff is not None else None,
                              'deltaPercent':format((diff/b*100).quantize(Decimal('.01')),'f') if diff is not None and b else None,
                              'currentPeriod':latest,'previousPeriod':previous(latest) if latest else None})
-    quality['overpaymentValue']=format(quality['overpaymentValue'],'f')
-    quality['reimbursementDifference']=format(overall.sums['reimbursed']-overall.sums['reimbursable'],'f') if (overall.known['reimbursable'] and overall.known['reimbursed']) else None
     return {'provisional':True,'notice':PROVISIONAL,'scope':'active','filters':q.filters(),'snapshot':digest.hexdigest(),
             'definitions':DEFINITIONS,'metrics':overall.report(),'charts':charts,'quality':quality,
             'facets':{f:{'values':sorted(v,key=lambda x:(x is None,x or '')),'truncated':f in facet_more} for f,v in facets.items()},
@@ -330,7 +321,7 @@ def summary_rows(data):
         for row in data['charts'][group]['items']:yield line(GROUPS[group],row['label'],row['metrics'])
 
 
-ROW_HEADERS=list(FIELDS.values())+['ID записи','ID документа','Действующая версия документа','Версия введения строки','Лист','Строка Excel','SHA-256 файла','Невозмещённый остаток, ₽','Некорректные поля источника','Статус','Фильтры','Отчётный квартал','Дата инвентаризации','Методика даты']
+ROW_HEADERS=list(FIELDS.values())+['ID записи','ID документа','Действующая версия документа','Версия введения строки','Лист','Строка Excel','SHA-256 файла','Некорректные поля источника','Статус','Фильтры','Отчётный квартал','Дата инвентаризации','Методика даты']
 
 
 def export_file(db,actor,q,kind,extension,folder):
@@ -350,7 +341,7 @@ def export_file(db,actor,q,kind,extension,folder):
                     if scanned%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Время выгрузки истекло; сузьте фильтры')
                     if not matches(row,q):continue
                     snapshot_update(digest,row)
-                    yield [row['data'].get(f) for f in FIELDS]+[row['id'],row['document_id'],row['current_version'],row['introduced_version'],row['sheet'],row['source_row'],row['file_sha'],row['numbers']['outstanding'],', '.join(sorted(row['invalid'])),PROVISIONAL,json.dumps(q.filters(),ensure_ascii=False,sort_keys=True),row.get('reportPeriod'),row.get('inventory_day').isoformat() if row.get('inventory_day') else None,row.get('inventoryDateMethod')]
+                    yield [row['data'].get(f) for f in FIELDS]+[row['id'],row['document_id'],row['current_version'],row['introduced_version'],row['sheet'],row['source_row'],row['file_sha'],', '.join(sorted(row['invalid'])),PROVISIONAL,json.dumps(q.filters(),ensure_ascii=False,sort_keys=True),row.get('reportPeriod'),row.get('inventory_day').isoformat() if row.get('inventory_day') else None,row.get('inventoryDateMethod')]
             if q.expectedSnapshot and digest.hexdigest()!=q.expectedSnapshot:raise HTTPException(409,'Данные изменились; обновите панель перед выгрузкой')
     if extension=='csv':
         with target.open('x',encoding='utf-8-sig',newline='') as handle:
