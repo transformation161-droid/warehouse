@@ -251,7 +251,7 @@ def aggregate(db,actor,q,all_groups=False):
             if overall.rows%256==0 and time.monotonic()-start>120:raise HTTPException(503,'Превышено время аналитики; сузьте фильтры')
         charts={}
         for g,values in groups.items():
-            keys=sorted(values,key=lambda k:(k is None,k or '')) if g=='months' else sorted(values,key=lambda k:(values[k].value(q.chartMetric) is None,-(values[k].value(q.chartMetric) or Decimal(0)),labels[g][k]))
+            keys=sorted(values,key=lambda k:(k is None,k or '')) if g in ('months','periods') else sorted(values,key=lambda k:(values[k].value(q.chartMetric) is None,-(values[k].value(q.chartMetric) or Decimal(0)),labels[g][k]))
             count=len(keys)
             if not all_groups:
                 if g in ('months','periods') and count>24:keys=[k for k in keys if k is not None][-(23 if None in values else 24):]+([None] if None in values else [])
