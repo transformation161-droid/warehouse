@@ -2,7 +2,7 @@
 'use strict';
 (()=>{
   const state={tab:'writeoffs',filters:{site:'',reportPeriod:'',reason:'',toolType:'',investigation:'',caseCategory:''},
-    metric:'cost',page:1,cache:new Map(),pending:new Set(),errors:new Map(),job:null,importPeriod:'',importSheet:0,importCached:false};
+    metric:'cost',page:1,cache:new Map(),pending:new Set(),errors:new Map(),job:null,importPeriod:'',importSheet:0,importCached:false,siteAliases:{}};
   const METRICS={inventories:'Инвентаризации по датам актов',quantity:'Списано, ед.',cost:'Стоимость, ₽',
     residual:'Остаточная стоимость, ₽',reimbursable:'К возмещению, ₽',reimbursed:'Возмещено, ₽',
     documents:'Документы',decisions:'Строки реестра'};
@@ -18,13 +18,13 @@
     const p=new URLSearchParams();
     const f={...state.filters};if(site)f.site=site;
     for(const [key,val] of Object.entries(f))if(val)p.set(key,val);
-    p.set('chartMetric',state.metric);p.set('page',String(site?1:state.page));p.set('limit','50');
+    p.set('chartMetric',state.metric);p.set('page',String(state.page));p.set('limit','50');
     return p;
   }
   const cacheKey=site=>query(site).toString();
   async function getJSON(url,options){
-    const r=await fetch(url,{credentials:'same-origin',cache:'no-store',
-      headers:{'X-KSU-Expected-User':sessionUser.id,...(options&&options.headers||{})},...options});
+    const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options,
+      headers:{'X-KSU-Expected-User':sessionUser.id,...(options&&options.headers||{})}});
     let result;try{result=await r.json()}catch{result={}};
     if(!r.ok)throw Error(typeof result.detail==='string'?result.detail:'Ошибка сервера: '+r.status);
     return result;
@@ -218,6 +218,7 @@
   async function previewFile(){
     const file=document.getElementById('wo-file')?.files?.[0];
     if(!file||!file.name.toLowerCase().endsWith('.xlsx'))return feedback('Выберите файл XLSX.',true);
+    state.siteAliases={};
     state.importPeriod=document.getElementById('wo-period').value;
     state.importSheet=Number(document.getElementById('wo-sheet').value);
     state.importCached=!!document.getElementById('wo-cached').checked;
@@ -240,7 +241,7 @@
       const response=await getJSON('/api/decision-imports/'+state.job+'/preview',{
         method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':sessionUser.csrf},
         body:JSON.stringify({sheet:state.importSheet,headerRow:1,firstRow:2,lastRow:100000,
-          mapping,allowCached:state.importCached,reportPeriod:state.importPeriod})});
+          mapping,siteAliases:state.siteAliases,allowCached:state.importCached,reportPeriod:state.importPeriod})});
       const status=await jobStatus(response.id,'preview');
       if(status.status==='error')throw Error(status.error||'Ошибка проверки книги');
       const errs=(status.errors||[]).slice(0,12).map(x=>'Строка '+x.row+', '+esc(x.column)+': '+esc(x.reason)+
@@ -265,6 +266,12 @@
       if(status.warning)msg+='<p>'+esc(status.warning)+'</p>';
       if(errs)msg+='<div class="notice warn section-gap">'+errs+'</div>';
       if(status.rejected)msg+='<a class="link" href="/api/decision-imports/'+state.job+'/errors.csv">Скачать все ошибки CSV</a>';
+      if(status.unknownSites?.length){
+        msg+='<p class="section-gap"><strong>Неопознанные названия объектов. Укажите, какому объекту в ИНСТРАКТ соответствует каждое название:</strong></p>';
+        msg+='<div class="form-grid">'+status.unknownSites.map(name=>'<div class="field"><label>'+esc(name)+'</label><select data-wo-alias="'+attr(name)+'"><option value="">Не сопоставлен</option>'+
+          db.sites.map(site=>'<option value="'+attr(site.id)+'"'+(state.siteAliases[name]===site.id?' selected':'')+'>'+esc(site.name)+'</option>').join('')+
+          '</select></div>').join('')+'</div><button class="btn primary section-gap" data-wo-action="alias">Сопоставить объекты и проверить повторно</button>';
+      }
       if(status.status==='ready')msg+='<p class="section-gap"><button class="btn primary" data-wo-action="commit">Сохранить '+status.accepted+' строк в общую базу</button></p>';
       feedback(msg,status.status!=='ready');
     }catch(e){feedback(esc(e.message),true)}
@@ -286,7 +293,7 @@
   function reload(){state.cache.clear();state.errors.clear();state.page=1;refreshVisible()}
   document.addEventListener('click',event=>{
     const site=event.target.closest('[data-wo-site]');
-    if(site){event.preventDefault();navTo('sites',site.dataset.woSite);return}
+    if(site){event.preventDefault();state.page=1;navTo('sites',site.dataset.woSite);return}
     const tab=event.target.closest('[data-wo-tab]');
     if(tab){event.preventDefault();state.tab=tab.dataset.woTab;render();return}
     const page=event.target.closest('[data-wo-page]');
@@ -303,6 +310,10 @@
       case 'commit':commit();break;
       case 'clear':state.filters={site:'',reportPeriod:'',reason:'',toolType:'',investigation:'',caseCategory:''};reload();break;
       case 'reload':reload();break;
+      case 'alias':{
+        state.siteAliases=Object.fromEntries([...document.querySelectorAll('[data-wo-alias]')]
+          .map(e=>[e.dataset.woAlias,e.value]).filter(([,v])=>v));
+        doPreview({});break}
       case 'remap':{const mapping=Object.fromEntries([...document.querySelectorAll('[data-wo-map]')]
         .map(e=>[e.dataset.woMap,e.value]).filter(([,v])=>v));doPreview(mapping);break}
       case 'show-site':state.filters.site=action.dataset.woSiteId;state.tab='writeoffs';navTo('reports');break;
