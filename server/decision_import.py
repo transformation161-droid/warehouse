@@ -141,13 +141,21 @@ def preview(folder, db):
     check_storage(db.path,reserve=192*1024*1024)
     for old in list(Path(folder).glob('inspect-*'))+list(Path(folder).glob('preview-*')):
         if old.is_dir() and not old.is_symlink():shutil.rmtree(old)
-    sites=sites_for(db,actor);stage=Path(folder)/'rows.sqlite3'
+    sites=sites_for(db,actor)
+    for source,target in settings.get('siteAliases',{}).items():
+        source=source.strip().casefold()
+        if not source or len(source)>120 or target not in sites.values():
+            raise Rejected('Сопоставление объектов содержит неизвестный объект или недопустимое название')
+        if source in sites and sites[source]!=target:
+            raise Rejected('Нельзя переназначить точное название существующего объекта')
+        sites[source]=target
+    stage=Path(folder)/'rows.sqlite3'
     stage.unlink(missing_ok=True)
     with closing(sqlite3.connect(stage)) as con:
         con.execute('pragma cache_size=-2048')
         con.execute('create table rows(number integer primary key, site_id text not null, data text not null)')
         con.execute('create table errors(seq integer primary key, row_no integer, column_name text, field text, reason text, fix text)')
-        accepted=rejected=processed=empty=0;size=0;samples=[];errors=[];formula_count=0
+        accepted=rejected=processed=empty=0;size=0;samples=[];errors=[];formula_count=0;unknown_sites=set()
         with Reader(Path(folder)/'source.xlsx',Path(folder)/('preview-'+uuid4().hex)) as reader:
             headers=next(reader.rows(settings['sheet'],settings['headerRow'],settings['headerRow'],allow_cached=False),None)
             if headers is None:raise Rejected('Строка заголовков не найдена')
@@ -165,6 +173,9 @@ def preview(folder, db):
             for number,cells in reader.rows(settings['sheet'],settings['firstRow'],settings['lastRow'],allow_cached=True,allow_missing_cached=True,allow_cell_errors=True):
                 processed+=1
                 record,row_errors=normalize(number,cells,mapping,sites,reader.date1904)
+                if any(error['field']==FIELDS['site'] for error in row_errors):
+                    raw_site=cells.get(mapping.get('site',''),{}).get('value')
+                    if raw_site is not None and len(unknown_sites)<50:unknown_sites.add(str(raw_site).strip())
                 if record is None:empty+=1;continue
                 if settings.get('reportPeriod'):record['reportPeriod']=settings['reportPeriod']
                 cell_errors=[]
@@ -197,10 +208,10 @@ def preview(folder, db):
                     if shutil.disk_usage(folder).free<256*1024*1024:raise Rejected('Недостаточно свободного места для безопасного импорта')
             con.commit()
         signature=hashlib.sha256(json.dumps({'sha256':meta['sha256'],'sheet':settings['sheet'],'firstRow':settings['firstRow'],
-                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'reportPeriod':settings.get('reportPeriod',''),'profile':'decisions-v1'},sort_keys=True).encode()).hexdigest()
+                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'siteAliases':settings.get('siteAliases',{}),'reportPeriod':settings.get('reportPeriod',''),'profile':'decisions-v1'},sort_keys=True).encode()).hexdigest()
         meta.update(status='ready' if accepted and not rejected else 'invalid',signature=signature,missing=[],processed=processed,
                     accepted=accepted,rejected=rejected,skipped=empty,normalizedBytes=size,errors=errors,rows=samples,
-                    formulaCells=formula_count,warning='Использованы сохранённые Excel значения; их актуальность не пересчитывается' if formula_count else '')
+                    formulaCells=formula_count,unknownSites=sorted(unknown_sites),warning='Использованы сохранённые Excel значения; их актуальность не пересчитывается' if formula_count else '')
         write_meta(folder,meta)
 
 
