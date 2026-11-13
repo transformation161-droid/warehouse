@@ -122,7 +122,7 @@ def normalize(number, cells, mapping, sites, date1904):
         except (ValueError,InvalidOperation,OverflowError):
             if field=='site':reason,fix='Объект не найден или недоступен','Создайте или назначьте объект и исправьте его название в источнике'
             elif field=='date':reason,fix='Некорректная дата','Используйте дату Excel или ГГГГ-ММ-ДД'
-            elif field in MONEY or field=='quantity':reason,fix='Некорректное число или точность','Укажите неотрицательное число до 10^12 без валюты; количество >0, до 6 знаков после запятой, деньги — до 4'
+            elif field in MONEY or field=='quantity':reason,fix='Некорректное число или точность','Укажите неотрицательное число до 10^12 без валюты; количество ≥0, до 6 знаков после запятой, деньги — до 4'
             else:reason,fix='Превышена длина текста','Сократите текст до 4000 символов для решения/комментария, до 500 для остальных полей'
             error(field,reason,fix)
         if cell:
