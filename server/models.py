@@ -159,6 +159,35 @@ class DecisionPreview(Model):
     lastRow: int = Field(default=100000, ge=2, le=100000)
     mapping: dict[str, str] = Field(default_factory=dict, max_length=17)
     allowCached: bool = False
+    reportPeriod: str = Field(default='', pattern=r'^(?:|[0-9]{4}-Q[1-4])(Model):
+    siteId: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=4_100_000)
+    mutationId: str | None = Field(default=None,min_length=12,max_length=100,pattern=r'^[a-zA-Z0-9_-]+$')
+    sha256: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+
+
+class OfflinePackage(Model):
+    siteIds: list[str] = Field(min_length=1,max_length=5)
+    ttlHours: int = Field(default=24,ge=1,le=24)
+
+
+class OfflineChanges(Changes):
+    packageId: str = Field(pattern=r'^[0-9a-f]{48}$')
+    changes: list[Change] = Field(min_length=1,max_length=100)
+
+
+class DecisionVersionPreview(Model):
+    documentId: str = Field(min_length=1,max_length=80)
+    expectedVersion: int = Field(ge=1)
+    mode: Literal['full','partial']
+    reason: str = Field(min_length=1,max_length=1200)
+    targetIds: list[str] = Field(default_factory=list,max_length=50000)
+    matches: dict[str,str] = Field(default_factory=dict,max_length=50000)
+
+
+class DecisionVersionConfirm(Model):
+    token: str = Field(min_length=64,max_length=64)
+)
 
 
 class MediaFile(Model):
