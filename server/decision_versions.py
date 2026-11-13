@@ -109,7 +109,7 @@ def prepare(folder,db,settings):
             fields=[]
             if old:
                 used.add(old[0]);prior=json.loads(old[1])
-                fields=[f for f in FIELDS if (Decimal(row[f])!=Decimal(prior[f]) if f in FINANCE and row.get(f) not in ('',None) and prior.get(f) not in ('',None) else row.get(f)!=prior.get(f))]
+                fields=[f for f in (*FIELDS,'reportPeriod') if (Decimal(row[f])!=Decimal(prior[f]) if f in FINANCE and row.get(f) not in ('',None) and prior.get(f) not in ('',None) else row.get(f)!=prior.get(f))]
             kind='added' if old is None else 'changed' if fields else 'unchanged';counts[kind]+=1
             stage.execute('insert into comparison(row_no,old_id,kind,fields) values(?,?,?,?)',(number,old[0] if old else None,kind,canonical(fields)))
         for oldid, in stage.execute('select id from previous where selected=1 and id not in (select old_id from comparison where old_id is not null)'):

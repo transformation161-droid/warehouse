@@ -5,7 +5,7 @@ from uuid import uuid4
 from server.database import now
 from server.decision_versions import initial_document
 
-MEASURES=('quantity','cost','residual','reimbursable','reimbursed','outstanding')
+MEASURES=('quantity','cost','residual','reimbursable','reimbursed')
 
 
 def records(count=8):
@@ -48,15 +48,12 @@ def scaled(value,places):
 
 
 def oracle(rows):
-    """Integer minor units, independent unknown coverage and per-line positive balance."""
+    """Integer minor units and independent unknown coverage of source fields."""
     result={'documents':str(len({r['_doc'] for r in rows})),'decisions':str(len(rows))};coverage={}
     for field in MEASURES:
         places=6 if field=='quantity' else 4;values=[]
         for row in rows:
-            if field=='outstanding':
-                a,b=scaled(row.get('reimbursable'),4),scaled(row.get('reimbursed'),4)
-                v=None if a is None or b is None else max(a-b,0)
-            else:v=scaled(row.get(field),places)
+            v=scaled(row.get(field),places)
             if v is not None:values.append(v)
         total=sum(values);unit=10**places
         result[field]=f'{total//unit}.{total%unit:0{places}}' if values else None

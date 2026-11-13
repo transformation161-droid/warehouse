@@ -127,7 +127,9 @@ def create_app(path=None, origin=None, secure=None):
         authorize(actor,request.url.path,request.method)
         if actor['role']=='viewer' and not getattr(db,'viewer_read_capable',True):
             fail('Для просмотра требуется явное обновление функций чтения на новой PostgreSQL-копии',403)
-        if release_policy:release_policy.routes(request.url.path)
+        if release_policy:release_policy.routes(request.url.path,request.method)
+        if os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')=='on' and request.url.path.startswith('/api/decision-imports') and actor['role']!='manager':
+            fail('Импорт списаний доступен только руководителю',403)
         expected=[request.headers.get('X-KSU-Expected-User')]
         if request.url.path.startswith('/api/media/'):expected.append(request.query_params.get('expectedUser'))
         if any(value and value!=actor['id'] for value in expected):
@@ -487,18 +489,19 @@ def create_app(path=None, origin=None, secure=None):
             from contextlib import closing
             from .reports import safe_cell
             output=io.StringIO();writer=csv.writer(output,delimiter=';')
-            writer.writerow(['Строка Excel','Колонка','Поле','Причина','Как исправить'])
+            writer.writerow(['Строка Excel','Колонка','Поле','Причина','Как исправить','Лист'])
             yield ('\ufeff'+output.getvalue()).encode('utf-8');output.seek(0);output.truncate(0)
             stage=folder/'rows.sqlite3'
             count=0
             if stage.exists():
                 with closing(sqlite3.connect(stage.as_uri()+'?mode=ro',uri=True)) as con:
+                    sheet=meta.get('sheets',[{}])[meta.get('settings',{}).get('sheet',0)].get('name','')
                     for row in con.execute('select row_no,column_name,field,reason,fix from errors order by seq'):
                         count+=1
-                        writer.writerow([safe_cell(x) for x in row]);yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
+                        writer.writerow([safe_cell(x) for x in (*row,sheet)]);yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
             if not count:
                 for error in meta.get('errors',[]):
-                    writer.writerow([safe_cell(error.get(k,'')) for k in ('row','column','field','reason','fix')])
+                    writer.writerow([safe_cell(error.get(k,'')) for k in ('row','column','field','reason','fix','sheet')])
                     yield output.getvalue().encode('utf-8');output.seek(0);output.truncate(0)
         return StreamingResponse(data(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="import-errors.csv"'})
 
@@ -671,12 +674,19 @@ def create_app(path=None, origin=None, secure=None):
     # Only explicit public assets; never serve database, backups, SQL, tests or source directories.
     from .writeoff_analytics import install as install_writeoff_analytics
     install_writeoff_analytics(app,db,auth)
+    from .writeoff_release import install as install_writeoff_release
+    install_writeoff_release(app,db,auth)
     def make_asset(filename):
         def asset():
-            if release_policy and filename in ('decisions.js','calendar.js','writeoff_analytics.js'):return Response(status_code=404)
+            if release_policy and filename in ('decisions.js','calendar.js'):return Response(status_code=404)
+            if release_policy and filename in ('writeoff_analytics.js','writeoff_charts.js','writeoff_charts.css','writeoff_statement.js') and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':return Response(status_code=404)
+            if release_policy and filename=='index.html' and os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':
+                html=(ROOT/'release_online/index.html').read_text()
+                for tag in ('<script src="writeoff_analytics.js" defer></script>','<script src="writeoff_charts.js" defer></script>','<script src="writeoff_statement.js" defer></script>','<link rel="stylesheet" href="writeoff_charts.css" />'):html=html.replace(tag,'')
+                return Response(html,media_type='text/html')
             return FileResponse(ROOT/'release_online'/filename if release_policy and (ROOT/'release_online'/filename).is_file() else ROOT/filename)
         return asset
-    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
+    for route,filename in [('/checklists.js','release_online/checklists.js'),('/viewer.js','release_online/viewer.js'),('/assets/instrakt-logo.svg','assets/instrakt-logo.svg'),('/','index.html'),('/index.html','index.html'),('/app.js','app.js'),('/sync.js','sync.js'),('/decisions.js','decisions.js'),('/calendar.js','calendar.js'),('/writeoff_analytics.js','writeoff_analytics.js'),('/writeoff_charts.js','writeoff_charts.js'),('/writeoff_statement.js','writeoff_statement.js'),('/writeoff_charts.css','writeoff_charts.css'),('/inventory-count.js','inventory-count.js'),('/styles.css','styles.css')]:
         app.add_api_route(route,make_asset(filename),methods=['GET'],include_in_schema=False)
     if release_policy:
         from .offline_release import install as install_release

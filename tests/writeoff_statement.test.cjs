@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const env={window:{},URL,Intl};vm.runInNewContext(fs.readFileSync('release_online/writeoff_statement.js','utf8'),env);const S=env.window.WriteoffStatement;
+const url='https://bitrix.demo.invalid/company/personal/user/7/tasks/task/view/10000/';
+const mixed='ДЕМО · Решение: ('+url+'). Текст после ссылки.';
+let html=S.text(mixed);assert.match(html,/target="_blank"/);assert.match(html,/rel="noopener noreferrer"/);assert.match(html,/Текст после ссылки/);assert.ok(html.includes(`href="${url}"`));assert.ok(html.endsWith('). Текст после ссылки.'));
+assert.match(S.text('ДЕМО · без ссылки'),/^ДЕМО · без ссылки$/);assert.ok(!S.text('Задача №10000').includes('<a'));
+for(const value of ['javascript:alert(1)','data:text/html,<script>x</script>','//bitrix.demo.invalid/42','ftp://bitrix.demo.invalid/42','https://name:password@bitrix.demo.invalid/42','https://','https://bad\u0000.invalid/42'])assert.equal(S.safeURL(value),null,value);
+assert.ok(S.safeURL('http://bitrix.demo.invalid/task/42'));assert.match(S.text('<img src=x onerror=alert(1)>'),/&lt;img/);assert.ok(!S.text('<img src=x onerror=alert(1)>').includes('<img'));
+assert.ok(!S.text('https://name:password@bitrix.demo.invalid/42').includes('<a'));
+assert.ok(!S.text('https://bad\u0000.invalid/42').includes('<a'));
+assert.equal((S.text(url+' и http://bitrix.demo.invalid/tasks/10001/').match(/<a /g)||[]).length,2);
+const row={id:'r1',sourceId:'DEMO-1',toolType:'ДЕМО · Инструмент',quantity:'0',cost:'0',residual:null,decision:mixed,comment:'ДЕМО · Полный комментарий',sheet:'ДЕМО',sourceRow:2,currentVersion:1};
+const render=S.render({totalRows:1,page:1,limit:50,rows:[row]},{siteName:'ДЕМО · Север',format:v=>v==null?'—':String(v),date:v=>v??'—'});
+assert.equal(Object.keys(S.fields).length,17);for(const key of Object.keys(S.fields))assert.ok(render.includes(`data-wo-column="${key}"`),key);
+assert.match(render,/data-wo-column="quantity">0</);assert.match(render,/data-wo-column="residual">—</);assert.match(render,/Полный комментарий/);assert.match(render,/Источник \/ версии/);assert.ok(render.includes(`href="${url}"`));
+console.log('PASS: all 17 source fields, zero vs missing, mixed text and URLs, no guessed links, HTTP(S) only, credential rejection, escaping and safe new tabs');

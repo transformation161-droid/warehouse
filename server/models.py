@@ -1,5 +1,5 @@
 """Strict API contracts. Client roles, authors, timestamps and versions are never trusted."""
-from datetime import date
+from datetime import date, date as DateType
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -159,6 +159,18 @@ class DecisionPreview(Model):
     lastRow: int = Field(default=100000, ge=2, le=100000)
     mapping: dict[str, str] = Field(default_factory=dict, max_length=17)
     allowCached: bool = False
+    reportPeriod: str = Field(default='', pattern=r'^(?:|[0-9]{4}-Q[1-4])$')
+    siteAliases: dict[str, str] = Field(default_factory=dict, max_length=50)
+    aliasesConfirmed: bool = False
+    sourceDocument: str = Field(default='', max_length=500)
+
+
+class InventoryDateOverride(Model):
+    expectedVersion: int = Field(ge=1)
+    mode: Literal['default','date','exclude']
+    date: DateType | None = None
+    reason: str = Field(min_length=1, max_length=1200)
+    mutationId: str = Field(pattern=r'^[a-f0-9]{32}$')
 
 
 class MediaFile(Model):
