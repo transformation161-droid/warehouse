@@ -160,6 +160,7 @@ class DecisionPreview(Model):
     mapping: dict[str, str] = Field(default_factory=dict, max_length=17)
     allowCached: bool = False
     reportPeriod: str = Field(default='', pattern=r'^(?:|[0-9]{4}-Q[1-4])$')
+    siteAliases: dict[str, str] = Field(default_factory=dict, max_length=50)
 
 
 class MediaFile(Model):
