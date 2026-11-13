@@ -1,0 +1,33 @@
+name: Write-off analytics - targeted acceptance
+
+on:
+  pull_request:
+    branches: [release/pr41-accepted-baseline]
+    paths:
+      - 'server/app.py'
+      - 'server/decision_import.py'
+      - 'server/models.py'
+      - 'server/offline_release.py'
+      - 'server/writeoff_analytics.py'
+      - 'release_online/**'
+      - 'tests/test_writeoff_release_v1.py'
+      - '.github/workflows/writeoff-v1-targeted.yml'
+
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install production dependencies and test client
+        run: |
+          python -m pip install -r requirements.txt httpx==0.28.1
+      - name: Python compile check
+        run: python -m compileall -q server/
+      - name: JS parse check
+        run: node --check release_online/writeoff_analytics.js
+      - name: Focused analytics regressions
+        run: python -m unittest -v tests.test_writeoff_release_v1
