@@ -31,7 +31,7 @@
   }
   function refreshVisible(){
     if(!sessionUser)return;
-    if(ui.page==='reports'||ui.page==='sites'&&ui.siteId)render();
+    if(ui.page==='home'||ui.page==='reports'||ui.page==='sites'&&ui.siteId)render();
   }
   function load(site){
     if(!sessionUser)return;
@@ -178,7 +178,29 @@
     if(!ui.siteId)return original;
     // Legacy manual count remains in DB and API; hide only its outdated view.
     const cleaned=original.replace(/<section class="card section-gap"><div class="card-title-row"><div class="card-title">История инвентаризаций<\/div><\/div>[\s\S]*?<\/section>$/,'');
-    return cleaned+siteScreen(ui.siteId);
+    const root=document.createElement('div');root.innerHTML=cleaned;
+    const data=state.cache.get(cacheKey(ui.siteId));
+    for(const card of root.querySelectorAll('.stat-card')){
+      const label=card.querySelector('.stat-label')?.textContent;
+      if(label==='Инвентаризаций')card.outerHTML=metric('Инвентаризаций по актам',
+        data?measure(value(data.metrics,'inventories'),'inventories'):'…','По уникальным датам','calendar');
+      if(label==='Сумма недостач')card.outerHTML=metric('Стоимость списаний',
+        data?measure(value(data.metrics,'cost'),'cost'):'…','По загруженным актам','chart');
+    }
+    return root.innerHTML+siteScreen(ui.siteId);
+  };
+  const baseOverviewWithWriteoffs=renderOverview;
+  renderOverview=function(){
+    const old=baseOverviewWithWriteoffs();
+    if(ui.role==='inspector')return old;
+    const {data}=dataset(null);
+    const root=document.createElement('div');root.innerHTML=old;
+    for(const card of root.querySelectorAll('.stat-card')){
+      if(card.querySelector('.stat-label')?.textContent==='Недостачи по пересчётам')
+        card.outerHTML=metric('Стоимость списаний',data?measure(value(data.metrics,'cost'),'cost'):'…',
+          'По загруженным актам','chart');
+    }
+    return root.innerHTML;
   };
   const legacy=navEntries.findIndex(x=>x[0]==='inventory');
   if(legacy>=0)navEntries.splice(legacy,1);
