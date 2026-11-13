@@ -220,7 +220,7 @@ def public_row(row):
 
 
 def aggregate(db,actor,q,all_groups=False):
-    start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};facets={f:set() for f in DIMENSIONS};facet_more=set()
+    start=time.monotonic();overall=Bucket();groups={g:{} for g in GROUPS};labels={g:{} for g in GROUPS};matrix={};facets={f:set() for f in DIMENSIONS};facet_more=set()
     page=[];quality={'missingDateRows':0,'invalidDateRows':0,'overpaymentRows':0,'overpaymentValue':Decimal(0),'fractionalQuantityRows':0};digest=hashlib.sha256()
     digest.update(json.dumps(q.filters(),sort_keys=True,ensure_ascii=False).encode())
     with localcontext() as context:
@@ -233,6 +233,9 @@ def aggregate(db,actor,q,all_groups=False):
                     else:facet_more.add(f)
             if not matches(row,q):continue
             snapshot_update(digest,row);overall.add(row)
+            cross_key=(row['site_id'],row['reportPeriod'] or '')
+            if cross_key not in matrix:matrix[cross_key]=Bucket()
+            matrix[cross_key].add(row)
             quantity=row['numbers']['quantity']
             if quantity is not None and quantity!=quantity.to_integral_value():quality['fractionalQuantityRows']+=1
             if row['day'] is None:quality['missingDateRows']+=1
@@ -266,6 +269,7 @@ def aggregate(db,actor,q,all_groups=False):
     return {'provisional':True,'notice':PROVISIONAL,'scope':'active','filters':q.filters(),'snapshot':digest.hexdigest(),
             'definitions':DEFINITIONS,'metrics':overall.report(),'charts':charts,'quality':quality,
             'facets':{f:{'values':sorted(v,key=lambda x:(x is None,x or '')),'truncated':f in facet_more} for f,v in facets.items()},
+            'matrix':[{'siteId':site_id,'period':period,'metrics':bucket.report()} for (site_id,period),bucket in sorted(matrix.items())],
             'rows':page,'page':q.page,'limit':q.limit,'totalRows':overall.rows,'elapsedSeconds':round(time.monotonic()-start,3)}
 
 
@@ -348,7 +352,7 @@ def export_file(db,actor,q,kind,extension,folder):
 def install(app,db,auth):
     gate=threading.BoundedSemaphore(1)
     @app.get('/api/writeoff-analytics')
-    def dashboard(request:Request):return aggregate(db,auth(request),parse(request))
+    def dashboard(request:Request):return aggregate(db,auth(request),parse(request),True)
 
     @app.get('/api/writeoff-analytics/export/{kind}.{extension}')
     def download(kind:str,extension:str,request:Request):
