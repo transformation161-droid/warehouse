@@ -105,7 +105,11 @@ def normalize(number, cells, mapping, sites, date1904):
                 if len(value)>40 or cell.get('type')=='b':raise ValueError('Некорректное число')
                 amount=Decimal(value.replace('\u00a0','').replace(' ','').replace(',','.'))
                 scale=6 if field=='quantity' else 4
-                if not amount.is_finite() or amount<0 or (field=='quantity' and amount==0) or abs(amount)>Decimal('1000000000000') or amount.as_tuple().exponent < -scale:
+                if field in MONEY and cell.get('type')=='n' and amount.is_finite() and 0<=amount<=Decimal('1000000000000') and amount.as_tuple().exponent < -4:
+                    rounded=amount.quantize(Decimal('.0001'))
+                    if abs(amount-rounded)<=Decimal('0.00000001'):
+                        amount=rounded;result.setdefault('excelRoundingFields',[]).append(field)
+                if not amount.is_finite() or amount<0 or abs(amount)>Decimal('1000000000000') or amount.as_tuple().exponent < -scale:
                     raise ValueError('Число выходит за безопасные пределы точности или размера')
                 result[field]=format(amount,'f')
             else:
@@ -122,7 +126,7 @@ def normalize(number, cells, mapping, sites, date1904):
         except (ValueError,InvalidOperation,OverflowError):
             if field=='site':reason,fix='Объект не найден или недоступен','Создайте или назначьте объект и исправьте его название в источнике'
             elif field=='date':reason,fix='Некорректная дата','Используйте дату Excel или ГГГГ-ММ-ДД'
-            elif field in MONEY or field=='quantity':reason,fix='Некорректное число или точность','Укажите неотрицательное число до 10^12 без валюты; количество >0, до 6 знаков после запятой, деньги — до 4'
+            elif field in MONEY or field=='quantity':reason,fix='Некорректное число или точность','Укажите неотрицательное число до 10^12 без валюты; количество ≥0, до 6 знаков после запятой, деньги — до 4'
             else:reason,fix='Превышена длина текста','Сократите текст до 4000 символов для решения/комментария, до 500 для остальных полей'
             error(field,reason,fix)
         if cell:
@@ -141,19 +145,34 @@ def preview(folder, db):
     check_storage(db.path,reserve=192*1024*1024)
     for old in list(Path(folder).glob('inspect-*'))+list(Path(folder).glob('preview-*')):
         if old.is_dir() and not old.is_symlink():shutil.rmtree(old)
-    sites=sites_for(db,actor);stage=Path(folder)/'rows.sqlite3'
+    sites=sites_for(db,actor)
+    from .writeoff_release import enabled
+    if enabled() and not settings.get('reportPeriod'):raise Rejected('Выберите отчётный год и квартал отдельно от даты акта')
+    if enabled() and settings.get('siteAliases') and not settings.get('aliasesConfirmed'):raise Rejected('Подтвердите сопоставление названий объектов')
+    normalized_aliases={}
+    for source,target in settings.get('siteAliases',{}).items():
+        source=source.strip().casefold()
+        if not source or len(source)>120 or target not in sites.values():
+            raise Rejected('Сопоставление объектов содержит неизвестный объект или недопустимое название')
+        if source in normalized_aliases and normalized_aliases[source]!=target:raise Rejected('Один алиас не может указывать на два объекта')
+        normalized_aliases[source]=target
+        if source in sites and sites[source]!=target:
+            raise Rejected('Нельзя переназначить точное название существующего объекта')
+        sites[source]=target
+    stage=Path(folder)/'rows.sqlite3'
     stage.unlink(missing_ok=True)
     with closing(sqlite3.connect(stage)) as con:
         con.execute('pragma cache_size=-2048')
         con.execute('create table rows(number integer primary key, site_id text not null, data text not null)')
         con.execute('create table errors(seq integer primary key, row_no integer, column_name text, field text, reason text, fix text)')
-        accepted=rejected=processed=empty=0;size=0;samples=[];errors=[];formula_count=0
+        accepted=rejected=processed=empty=0;excluded=0;size=0;samples=[];errors=[];formula_count=0;unknown_sites=set();sums={f:Decimal(0) for f in ('quantity',*sorted(MONEY))};known={f:0 for f in sums};zeroes=0;rounded_cells=0;documents=set();dates=set()
         with Reader(Path(folder)/'source.xlsx',Path(folder)/('preview-'+uuid4().hex)) as reader:
             headers=next(reader.rows(settings['sheet'],settings['headerRow'],settings['headerRow'],allow_cached=False),None)
             if headers is None:raise Rejected('Строка заголовков не найдена')
             labels={k:v['value'] or k for k,v in headers[1].items()}
+            def header_key(v):return ''.join(c for c in str(v).casefold() if c.isalnum())
             mapping=settings.get('mapping') or {field:matches[0] for field,label in FIELDS.items()
-                if len(matches:=[col for col,value in labels.items() if value in (field,label)])==1}
+                if len(matches:=[col for col,value in labels.items() if header_key(value) in (header_key(field),header_key(label))])==1}
             if len(set(mapping.values()))!=len(mapping):raise Rejected('Одна колонка не может обозначать несколько разных показателей')
             missing=sorted(REQUIRED-set(mapping))
             meta['headers']=labels;meta['mapping']=mapping;meta['styles']=reader.formats;meta['date1904']=reader.date1904
@@ -165,7 +184,13 @@ def preview(folder, db):
             for number,cells in reader.rows(settings['sheet'],settings['firstRow'],settings['lastRow'],allow_cached=True,allow_missing_cached=True,allow_cell_errors=True):
                 processed+=1
                 record,row_errors=normalize(number,cells,mapping,sites,reader.date1904)
+                if any(error['field']==FIELDS['site'] for error in row_errors):
+                    raw_site=cells.get(mapping.get('site',''),{}).get('value')
+                    if raw_site is not None and len(unknown_sites)<50:unknown_sites.add(str(raw_site).strip())
                 if record is None:empty+=1;continue
+                if settings.get('sourceDocument') and record.get('document')!=settings['sourceDocument']:
+                    excluded+=1;continue
+                if settings.get('reportPeriod'):record['reportPeriod']=settings['reportPeriod']
                 cell_errors=[]
                 for field,col in mapping.items():
                     cell=cells.get(col,{})
@@ -183,11 +208,16 @@ def preview(folder, db):
                     for error in row_errors:
                         con.execute('insert into errors(row_no,column_name,field,reason,fix) values(?,?,?,?,?)',
                                     tuple(error[k] for k in ('row','column','field','reason','fix')))
-                    errors.extend(row_errors[:max(0,100-len(errors))])
+                    errors.extend([{**error,'sheet':reader.sheets[settings['sheet']][0]} for error in row_errors[:max(0,100-len(errors))]])
                 else:
                     encoded=json.dumps(record,ensure_ascii=False,separators=(',',':'));size+=len(encoded.encode())
                     if size>MAX_NORMALIZED:raise Rejected('Нормализованные данные превышают 64 МиБ; уменьшите выбранный диапазон')
                     con.execute('insert into rows values(?,?,?)',(number,record['siteId'],encoded));accepted+=1
+                    for key in sums:
+                        if record.get(key) is not None:sums[key]+=Decimal(record[key]);known[key]+=1
+                    rounded_cells+=len(record.get('excelRoundingFields',[]))
+                    if Decimal(record['quantity'])==0:zeroes+=1
+                    documents.add((record['siteId'],record['document']));dates.add((record['siteId'],record['date']))
                     if len(samples)<20:samples.append({'row':number,**{k:(v[:250] if isinstance(v,str) else v) for k,v in record.items() if k not in ('sourceCells','unmappedCells')}})
                 if processed%500==0:
                     con.commit()
@@ -195,11 +225,14 @@ def preview(folder, db):
                     if stage.stat().st_size>192*1024*1024:raise Rejected('Превышен предел временного хранилища импорта')
                     if shutil.disk_usage(folder).free<256*1024*1024:raise Rejected('Недостаточно свободного места для безопасного импорта')
             con.commit()
-        signature=hashlib.sha256(json.dumps({'sha256':meta['sha256'],'sheet':settings['sheet'],'firstRow':settings['firstRow'],
-                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'profile':'decisions-v1'},sort_keys=True).encode()).hexdigest()
-        meta.update(status='ready' if accepted and not rejected else 'invalid',signature=signature,missing=[],processed=processed,
+        profile={'sha256':meta['sha256'],'sheet':settings['sheet'],'firstRow':settings['firstRow'],
+                    'lastRow':settings['lastRow'],'headerRow':settings['headerRow'],'mapping':mapping,'siteAliases':settings.get('siteAliases',{}),'reportPeriod':settings.get('reportPeriod',''),'profile':'decisions-v1'}
+        if settings.get('sourceDocument'):profile['sourceDocument']=settings['sourceDocument']
+        signature=hashlib.sha256(json.dumps(profile,sort_keys=True).encode()).hexdigest()
+        meta.update(summary={**{f:format(v,'f') if known[f] else None for f,v in sums.items()},'known':known,'rows':accepted,'zeroQuantityRows':zeroes,'documents':len(documents),'inventories':len(dates)},excludedDocumentRows=excluded,
+                    status='ready' if accepted and not rejected else 'invalid',signature=signature,missing=[],processed=processed,
                     accepted=accepted,rejected=rejected,skipped=empty,normalizedBytes=size,errors=errors,rows=samples,
-                    formulaCells=formula_count,warning='Использованы сохранённые Excel значения; их актуальность не пересчитывается' if formula_count else '')
+                    excelRoundingCells=rounded_cells,formulaCells=formula_count,unknownSites=sorted(unknown_sites),warning='Использованы сохранённые Excel значения; их актуальность не пересчитывается' if formula_count else '')
         write_meta(folder,meta)
 
 
@@ -239,6 +272,7 @@ def commit(folder, db):
                 raise Rejected('Недостаточно запаса в лимите SQLite для всего импорта; уменьшите диапазон или согласуйте перенос хранения')
             if not version_plan:check_new_collisions(db,con,stage)
             data={k:meta[k] for k in ('sha256','name','signature','settings','mapping','processed','accepted','rejected','skipped','formulaCells','styles','date1904')}
+            data.update(summary=meta.get('summary'),excelRoundingCells=meta.get('excelRoundingCells',0))
             con.execute('insert into imports values(?,?,?,?)',(meta['signature'],actor['id'],json.dumps(data,ensure_ascii=False),now()))
             created=now();seen=set()
             target=begin_version(con,meta,actor,created,stage) if version_plan else None
@@ -390,6 +424,7 @@ class Jobs:
                     meta.update(processed=0,accepted=0,rejected=0,rows=[],errors=[],missing=[],message='',warning='',formulaCells=0)
                     meta.pop('versionPlan',None);meta.pop('confirmedVersionToken',None)
                     meta.pop('versionSettings',None)
+                    for key in ('summary',):meta.pop(key,None)
             meta['action']=action
             meta['status']={'inspect':'inspecting','preview':'checking','version':'checking','commit':'committing'}[action]
             write_meta(folder,meta)

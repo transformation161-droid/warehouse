@@ -85,12 +85,13 @@ class Analytics(unittest.TestCase):
         self.assertEqual(self.manager.get('/api/decisions?history=true').json()['total'],2)
         self.assertEqual(self.panel(documentId=old['documentId'])['totalRows'],1)
 
-    def test_unknown_zero_exact_precision_and_no_cross_line_offset(self):
+    def test_unknown_zero_exact_precision_and_independent_reimbursements(self):
         source=list(records(3))
         for i,r in enumerate(source):r.update(cost=['0.0000',None,'999999999999.9999'][i],residual=None,reimbursable=['5','0',None][i],reimbursed=['3','4','1'][i])
         rows=insert(self.app.state.db,source);data=self.panel();self.verify(data,rows)
-        self.assertEqual(data['metrics']['outstanding']['value'],'2');self.assertEqual(data['metrics']['outstanding']['missingRows'],1)
-        self.assertIsNone(data['metrics']['residual']['value']);self.assertEqual(data['quality']['overpaymentValue'],'4')
+        self.assertEqual(data['metrics']['reimbursable']['value'],'5');self.assertEqual(data['metrics']['reimbursed']['value'],'8')
+        self.assertEqual(data['metrics']['reimbursable']['missingRows'],1);self.assertIsNone(data['metrics']['residual']['value'])
+        self.assertNotIn('outstanding',data['metrics']);self.assertNotIn('overpaymentValue',data['quality'])
         zero=self.panel(metricField='cost',coverage='known',documentId=rows[0]['_doc'])
         self.assertEqual(zero['metrics']['cost']['value'],'0.0000');self.assertEqual(zero['metrics']['cost']['missingRows'],0)
 
@@ -131,7 +132,7 @@ class Analytics(unittest.TestCase):
         source=list(records(2));source[0].update(date='2026-02-30',cost='NaN',residual='-1',quantity='1.0000001',reimbursable='0.00001')
         source[1].update(date=None,cost=None,residual=None,quantity=None,reimbursable=None)
         insert(self.app.state.db,source);data=self.panel()
-        for field in ('cost','residual','quantity','reimbursable','outstanding'):
+        for field in ('cost','residual','quantity','reimbursable'):
             self.assertIsNone(data['metrics'][field]['value']);self.assertEqual(data['metrics'][field]['missingRows'],2)
             self.assertEqual(data['metrics'][field]['invalidRows'],1)
         self.assertEqual(data['quality']['invalidDateRows'],1);self.assertEqual(data['quality']['missingDateRows'],2)

@@ -1,3 +1,5 @@
+> **PR46 принят как MVP; выпуск ещё не разрешён.** [Сверка Amvera, GO/STOP, backup и откат](docs/RELEASE_GO_NO_GO.md), [отдельные команды владельцу](docs/PR46_RELEASE_COMMANDS.md). Фактические SHA/backend production требуют проверки владельцем. Новых функций нет, production не обновлён. [Изолированный предпросмотр](docs/PR46_PREVIEW.md); сводный файл «Аналитика инвентаризаций» не импортируется.
+
 > **Подключение PostgreSQL Amvera:** [явные профили и ограничения безопасности](docs/AMVERA_PG_TRANSPORT.md). Для остальных провайдеров verify-full остаётся обязательным.
 
 > **Первый рабочий пилот: чистая PostgreSQL, без миграции демо-SQLite.** [Короткая инструкция владельцу](docs/FIRST_POSTGRES_PILOT.md), [редактор и версии чек-листа](docs/CHECKLIST_MANAGEMENT.md), [будущие пользователи — только требования](docs/FUTURE_USER_ADMIN.md).

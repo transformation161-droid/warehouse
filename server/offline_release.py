@@ -19,6 +19,7 @@ class Policy:
 
     @classmethod
     def environment(cls):
+        if os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off') not in ('off','on'):raise ValueError('Invalid write-off analytics mode')
         if os.getenv('KSU_VIEWER_ACCESS','enabled') not in ('enabled','off'):raise ValueError('Invalid viewer access mode')
         mode=os.getenv('KSU_OFFLINE_MODE','off')
         if mode not in ('off','staging','pilot'):raise ValueError('Invalid offline mode')
@@ -40,9 +41,19 @@ class Policy:
         if actor['role']=='inspector' and any(c.collection=='visits' and (c.expectedVersion==0 or c.data.get('status')!='completed') for c in batch.changes):
             fail('Первый релиз сохраняет прежние права: инспектор завершает назначенный выезд, план изменяет руководитель.',403)
 
-    def routes(self,path):
+    def routes(self,path,method='GET'):
         if path.startswith(('/api/decision-imports','/api/decisions','/api/decision-documents','/api/writeoff-analytics')):
-            fail('Этот раздел не включён в первый офлайн-релиз',404)
+            if os.getenv('KSU_WRITEOFF_ANALYTICS_ENABLED','off')!='on':
+                fail('Раздел аналитики списаний пока не включён',404)
+            ident=r'[a-f0-9]{32}';document=r'[a-f0-9]{64}'
+            reads=(r'/api/decision-imports(?:/'+ident+r'(?:/(?:comparison|version-inputs|errors\.csv))?)?',
+                   r'/api/decisions(?:/(?:'+ident+r'|totals|export\.csv))?',
+                   r'/api/decision-documents(?:/'+document+r'/versions)?',
+                   r'/api/writeoff-analytics(?:/import-options|/export/(?:rows|summary)\.(?:csv|xlsx))?')
+            writes=(r'/api/decision-imports(?:/'+ident+r'/(?:preview|commit|version-preview|version-confirm))?',
+                    r'/api/writeoff-analytics/documents/'+document+r'/inventory-date')
+            allowed=reads if method=='GET' else writes if method=='POST' else (r'/api/decision-imports/'+ident,) if method=='DELETE' else ()
+            if not any(re.fullmatch(pattern,path) for pattern in allowed):fail('Метод аналитики не включён',404)
 
 
 def install(app,auth,policy):
