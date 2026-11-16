@@ -14,10 +14,10 @@ try {
  $null=[Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors)
  Assert ($errors.Count -eq 0) 'PowerShell parser errors'
  foreach ($doc in @('docs/PR46_RELEASE_COMMANDS.md','docs/PR46_PREVIEW.md')) {
-  $markdown=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot ('..\'+$doc))
+  $markdown=Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $PSScriptRoot ('..\'+$doc))
   foreach ($block in [regex]::Matches($markdown,'(?ms)^```powershell\r?\n(.*?)^```')) {
    $null=[Management.Automation.Language.Parser]::ParseInput($block.Groups[1].Value,[ref]$tokens,[ref]$errors)
-   Assert ($errors.Count -eq 0) ('Owner command is not valid Windows PowerShell 5: '+$doc)
+   Assert ($errors.Count -eq 0) ('Owner command is not valid Windows PowerShell 5: '+$doc+'; '+(($errors | ForEach-Object {$_.Message+' at '+$_.Extent.StartLineNumber}) -join '; '))
   }
  }
  & $script -ValidateOnly -DataDirectory (Join-Path $root 'validation') -HostAddress 127.0.0.1
