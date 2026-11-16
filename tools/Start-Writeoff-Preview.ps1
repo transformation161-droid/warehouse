@@ -56,6 +56,31 @@ if (Test-Path -LiteralPath $statePath) {
 } elseif ((Test-Path -LiteralPath $directory) -and @(Get-ChildItem -Force -LiteralPath $directory).Count) { throw 'Existing non-demo/nonempty folder refused. No overwrite or reset.' }
 if ($ValidateOnly) { Write-Host 'PASS: pinned package and private path/endpoint guards; no Docker call or data change.';return }
 function Invoke-Docker { & docker @args;if ($LASTEXITCODE -ne 0) { throw 'PR46 test operation failed. Retain private files/resources; do not reset production or delete volumes.' } }
+function Invoke-ReadinessProbe([string[]]$DockerArguments) {
+ # PowerShell 5.1 turns native stderr into NativeCommandError under Stop, even
+ # with 2>$null. Only this read-only probe tolerates it; all mutations still fail.
+ $previous=$ErrorActionPreference
+ try {
+  $ErrorActionPreference='Continue'
+  $value=@(& docker @DockerArguments 2>$null)
+  $code=$LASTEXITCODE
+ } finally { $ErrorActionPreference=$previous }
+ return @{Code=$code;Value=($value -join "`n").Trim()}
+}
+function Wait-AppHealth([string]$Container,[string]$ExpectedSha,[string]$Probe,[int]$Attempts=90,[int]$DelaySeconds=1) {
+ $stage='CONNECTION';$code=-1
+ for ($n=0;$n -lt $Attempts;$n++) {
+  $reply=Invoke-ReadinessProbe @('exec',$Container,'python','-c',$Probe)
+  $code=$reply.Code
+  if ($code -eq 0 -and $reply.Value -ceq $ExpectedSha) { return }
+  $stage=if ($reply.Value -cmatch '^(TLS|CONNECTION|HEALTH|BACKEND)$') {$reply.Value} elseif ($code -eq 0) {'BUILD_MISMATCH'} else {'PROBE_FAILED'}
+  if ($n+1 -lt $Attempts) { Start-Sleep -Seconds $DelaySeconds }
+ }
+ # Never print docker logs, inspect Config.Env or raw native stderr/tracebacks.
+ $state=Invoke-ReadinessProbe @('inspect','--format','{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}',$Container)
+ $status=if ($state.Code -eq 0 -and $state.Value -cmatch '^(created|running|paused|restarting|removing|exited|dead)\|-?[0-9]+\|(true|false)$') {$state.Value} else {'unavailable'}
+ throw "Pinned app health/TLS check failed: stage=$stage; probe_exit=$code; state/exit/oom=$status. Retain the test resources; inspect private logs locally."
+}
 Write-Host 'Checking Docker Linux-container engine...'
 if ((Invoke-Docker info --format '{{.OSType}}') -ne 'linux') { throw 'Docker Desktop must be running in Linux-container mode.' }
 function Resource($kind,$name) {
@@ -122,7 +147,7 @@ if ($Action -eq 'Start') {
   # Database is NOT published on any host port. Only the new private Docker network.
   Invoke-Docker run -d --pull never --name $pg --label $label --network $network --network-alias pr46-db --user 0:0 --cpus 0.5 --memory 1g --memory-swap 1g --env-file (Join-Path $privateDirectory 'server.env') --mount "$privateMount,readonly" --mount "$tlsMount,readonly" --mount "type=volume,src=$data,dst=/var/lib/postgresql/data" --mount "type=bind,src=$(Join-Path $PackageRoot 'pg-start.sh'),dst=/acceptance/pg-start.sh,readonly" --entrypoint bash $state.image /acceptance/pg-start.sh | Out-Null
  } else { Invoke-Docker start $pg | Out-Null }
- $ready=$false;for ($n=0;$n -lt 120;$n++) { & docker exec $pg pg_isready -U postgres -d ksu_pr46_demo *> $null;if ($LASTEXITCODE -eq 0) {$ready=$true;break};Start-Sleep -Seconds 1 }
+ $ready=$false;for ($n=0;$n -lt 120;$n++) { $reply=Invoke-ReadinessProbe @('exec',$pg,'pg_isready','-U','postgres','-d','ksu_pr46_demo');if ($reply.Code -eq 0) {$ready=$true;break};Start-Sleep -Seconds 1 }
  if (-not $ready) { throw 'New test PostgreSQL not ready; existing resources untouched.' }
  if (-not (Test-Path -LiteralPath (Join-Path $privateDirectory 'seed-complete.json'))) {
   Invoke-Docker run --name ($name+'-seed') --label $label --pull never --network $network @limits --env-file (Join-Path $privateDirectory 'bootstrap.env') --mount $privateMount --mount "$tlsMount,readonly" --mount $helperMount --entrypoint python $state.image /acceptance/demo.py seed /private | Out-Host
@@ -132,10 +157,21 @@ if ($Action -eq 'Start') {
  if (-not (Resource 'container' $app)) {
   Invoke-Docker run -d --pull never --name $app --label $label --network $network --read-only @limits --tmpfs '/tmp:rw,nosuid,nodev,size=2g' --env-file (Join-Path $privateDirectory 'runtime.env') --mount "$tlsMount,readonly" -p "$($state.host):$($state.port):8000" $state.image | Out-Null
  } else { Invoke-Docker start $app | Out-Null }
- $ready=$false
- $probe="import ssl,json,urllib.request; c=ssl.create_default_context(cafile='/tls/ca.crt'); r=urllib.request.Request('https://127.0.0.1:8000/api/health',headers={'Host':'$($state.host):$($state.port)'}); d=json.load(urllib.request.urlopen(r,context=c,timeout=3)); assert d['backend']=='postgresql'; print(d['build'])"
- for ($n=0;$n -lt 90;$n++) { $value=& docker exec $app python -c $probe 2>$null;if ($LASTEXITCODE -eq 0 -and $value -eq $AppSha) {$ready=$true;break};Start-Sleep -Seconds 1 }
- if (-not $ready) { throw 'Pinned app health/TLS check failed; retain the test resources.' }
+ $probe=@"
+import ssl,json,urllib.request,urllib.error,sys
+try:
+ c=ssl.create_default_context(cafile='/tls/ca.crt')
+ r=urllib.request.Request('https://127.0.0.1:8000/api/health',headers={'Host':'$($state.host):$($state.port)'})
+ d=json.load(urllib.request.urlopen(r,context=c,timeout=3))
+ if d.get('status')!='ok': print('HEALTH'); sys.exit(1)
+ if d.get('backend')!='postgresql': print('BACKEND'); sys.exit(1)
+ print(d.get('build','BUILD_MISMATCH'))
+except ssl.SSLError: print('TLS'); sys.exit(1)
+except urllib.error.HTTPError: print('HEALTH'); sys.exit(1)
+except urllib.error.URLError as e: print('TLS' if isinstance(e.reason,ssl.SSLError) else 'CONNECTION'); sys.exit(1)
+except Exception: print('HEALTH'); sys.exit(1)
+"@
+ Wait-AppHealth $app $AppSha $probe
 }
 $prepared=Get-Content -Raw -LiteralPath (Join-Path $privateDirectory 'prepared.json') | ConvertFrom-Json
 if ($prepared.app_sha -ne $AppSha -or $prepared.instance -ne $state.instance -or $prepared.origin -ne ('https://'+$state.host+':'+$state.port)) { throw 'Prepared profile mismatch.' }

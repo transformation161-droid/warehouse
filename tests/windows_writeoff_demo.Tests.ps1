@@ -13,6 +13,13 @@ try {
  $tokens=$null;$errors=$null
  $null=[Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors)
  Assert ($errors.Count -eq 0) 'PowerShell parser errors'
+ foreach ($doc in @('docs/PR46_RELEASE_COMMANDS.md','docs/PR46_PREVIEW.md')) {
+  $markdown=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot ('..\'+$doc))
+  foreach ($block in [regex]::Matches($markdown,'(?ms)^```powershell\r?\n(.*?)^```')) {
+   $null=[Management.Automation.Language.Parser]::ParseInput($block.Groups[1].Value,[ref]$tokens,[ref]$errors)
+   Assert ($errors.Count -eq 0) ('Owner command is not valid Windows PowerShell 5: '+$doc)
+  }
+ }
  & $script -ValidateOnly -DataDirectory (Join-Path $root 'validation') -HostAddress 127.0.0.1
  Assert (-not (Test-Path (Join-Path $root 'validation'))) 'Validation created data'
  Refuses { & $script -ValidateOnly -DataDirectory (Join-Path $root 'unused') -HostAddress 8.8.8.8 } 'Accepted public bind'
@@ -51,6 +58,7 @@ public class PR46SyntheticDocker {
     string kind=a[0]=="ps"?"container":a[0];
     foreach(string f in Directory.GetFiles(root,kind+"-*.json")) { var d=j.Deserialize<Dictionary<string,object>>(File.ReadAllText(f));Console.WriteLine(((string)d["Name"]).TrimStart('/')); }return 0;
    }
+   if(a[0]=="inspect" && a[1]=="--format") { Console.WriteLine("running|0|false");return 0; }
    if(a.Length==3 && a[1]=="inspect") { Console.Write("["+File.ReadAllText(FileFor(a[0],a[2]))+"]");return 0; }
    if((a[0]=="network" || a[0]=="volume") && a[1]=="create") {
     string n=a[a.Length-1];string label=After(a,"--label");Save(a[0],n,D("Name",n,"Labels",D("instrakt.pr46.test",label.Split('=')[1])));Console.WriteLine(n);return 0;
@@ -72,7 +80,17 @@ public class PR46SyntheticDocker {
     } else if(a[1].EndsWith("/seed-complete.json")) File.WriteAllText(dest,"{\"seeded\":true}");else if(a[1].EndsWith("/DEMO-writeoffs.xlsx")) File.WriteAllText(dest,"SYNTHETIC ONLY");else return 8;
     return 0;
    }
-   if(a[0]=="exec") { if(Array.IndexOf(a,"pg_isready")>=0)return 0;if(Array.IndexOf(a,"python")>=0) { Console.WriteLine(sha);return 0; } }
+   if(a[0]=="exec") {
+    bool pg=Array.IndexOf(a,"pg_isready")>=0;
+    string f=Path.Combine(root,pg?"pg-probes.txt":"app-probes.txt");int n=File.Exists(f)?Int32.Parse(File.ReadAllText(f)):0;File.WriteAllText(f,(n+1).ToString());
+    string mode=Environment.GetEnvironmentVariable("PR46_PROBE_MODE");
+    if(!pg && mode=="TLS") { Console.WriteLine("TLS");Console.Error.WriteLine("PRIVATE_SYNTHETIC_SECRET");return 1; }
+    if(!pg && mode=="wrong-build") { Console.WriteLine(new String('0',40));return 0; }
+    if(n<(pg?2:3)) { Console.Error.WriteLine("Traceback (most recent call last): PRIVATE_SYNTHETIC_SECRET");return 1; }
+    if(!pg && n==3) { Console.WriteLine("TLS");return 1; }
+    if(!pg && n==4) { Console.WriteLine(new String('0',40));return 0; }
+    if(!pg)Console.WriteLine(sha);return 0;
+   }
    if(a[0]=="stop" || a[0]=="start") { Console.WriteLine(a[1]);return 0; }
    Console.Error.WriteLine("Unexpected synthetic native argv");return 9;
   } catch(Exception) { Console.Error.WriteLine("Synthetic Docker stub failed");return 10; }
@@ -83,6 +101,9 @@ public class PR46SyntheticDocker {
  $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
  $profile=Join-Path $root 'private profile with spaces'
  & $script -DataDirectory $profile -HostAddress 127.0.0.1 -Port $port
+ Assert ([int](Get-Content (Join-Path $root 'app-probes.txt')) -eq 6) 'First start did not retry native stderr, TLS and wrong SHA'
+ Assert ([int](Get-Content (Join-Path $root 'pg-probes.txt')) -eq 3) 'PostgreSQL transient stderr aborted readiness'
+ Assert ($ErrorActionPreference -eq 'Stop') 'Probe weakened caller error policy'
  $state=Get-Content -Raw (Join-Path $profile 'state.json') | ConvertFrom-Json
  $before=(Get-FileHash (Join-Path $profile 'private/test-accounts.txt')).Hash
  & $script -Action Stop -DataDirectory $profile
@@ -94,7 +115,21 @@ public class PR46SyntheticDocker {
  Assert (@($calls | Where-Object {$_ -match '^stop\t'}).Count -eq 2) 'Stop changed more than the owned app/database'
  Assert (-not ($calls -match 'volume\t(rm|prune)|\t0.0.0.0:|--format.*Config.Labels')) 'Unsafe deletion, bind or inspect template'
  Assert (@($calls | Where-Object {$_ -match '^run\t' -and $_ -match '--env-file\t[^\t]*private profile with spaces\\private\\runtime.env\t'}).Count -eq 1) 'Space-containing private path did not cross native argv intact'
- Assert (@($calls | Where-Object {$_ -match '^exec\t' -and $_ -match "\t-c\timport ssl,json,urllib.request;.*cafile='/tls/ca.crt'"}).Count -eq 2) 'Python probe lost native argument quotes'
+ Assert (@($calls | Where-Object {$_ -match '^exec\t' -and $_ -match '\t-c\timport ssl,json,urllib.request,urllib.error,sys$'}).Count -eq 7) 'Python probe lost native argument boundary'
+ Assert (($calls -join "`n").Contains("c=ssl.create_default_context(cafile='/tls/ca.crt')")) 'Probe lost CA verification'
+ # Exercise bounded failure without waiting 90s. Load ONLY these pure probe
+ # function declarations from the parsed, verified kit, never rerun setup.
+ $ast=[Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors)
+ foreach ($definition in $ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Invoke-ReadinessProbe','Wait-AppHealth')},$true)) { Invoke-Expression $definition.Extent.Text }
+ foreach ($mode in @('TLS','wrong-build')) {
+  $env:PR46_PROBE_MODE=$mode;$message=''
+  try { Wait-AppHealth ($state.name+'-app') $env:PR46_APP_SHA 'synthetic bounded probe' -Attempts 3 -DelaySeconds 0 } catch { $message=$_.Exception.Message }
+  $expected=if ($mode -eq 'TLS') {'stage=TLS'} else {'stage=BUILD_MISMATCH'}
+  Assert ($message.Contains($expected) -and $message.Contains('running|0|false')) 'Missing bounded TLS/build/container diagnosis'
+  Assert (-not $message.Contains('PRIVATE_SYNTHETIC_SECRET') -and -not $message.Contains('Traceback')) 'Readiness leaked raw stderr'
+ }
+ Remove-Item Env:PR46_PROBE_MODE
+ Assert ($ErrorActionPreference -eq 'Stop') 'Bounded failure changed caller error policy'
  # The exact owner command including process-only ExecutionPolicy and real CA import.
  # Certificate trust is confined to this disposable hosted VM, destroyed after the job.
  Write-Host 'CA check: creating one ephemeral certificate in the CI user store.'
@@ -162,7 +197,7 @@ public class PR46OwnCertificateConsent {
  Refuses { & $script -Action Stop -DataDirectory $profile } 'Stopped a container with a foreign label'
  $later=@(Get-Content (Join-Path $root 'calls.txt') | Select-Object -Skip $count)
  Assert (-not ($later -match '^(stop|run|start|rm)\t')) 'Rejected ownership changed a resource'
- Write-Host 'PASS: native PowerShell 5 start/stop/resume/status; spaces and JSON inspect; private paths/ports/ownership; no reseed/reset; exact test CA import and mismatch refusal.'
+ Write-Host 'PASS: native PowerShell 5 first-start transient stderr/TLS/build retries, bounded sanitized diagnosis; start/stop/resume/status; private paths/ownership; no reseed/reset; exact test CA import.'
 } finally {
  if ($consentJob) { Stop-Job $consentJob;Remove-Job $consentJob -Force }
  # Deleting protected roots opens a second native consent dialog. The complete hosted
